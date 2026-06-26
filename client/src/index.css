@@ -1,0 +1,246 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/* ============================================================
+   Randolph Construction — dark industrial design system
+   Ported from the Google Stitch "Randolph Construction Web Layout"
+   ============================================================ */
+@theme {
+  /* Surfaces / backgrounds */
+  --color-background: #131313;
+  --color-surface: #131313;
+  --color-surface-dim: #131313;
+  --color-surface-bright: #393939;
+  --color-surface-container-lowest: #0e0e0e;
+  --color-surface-container-low: #1c1b1b;
+  --color-surface-container: #201f1f;
+  --color-surface-container-high: #2a2a2a;
+  --color-surface-container-highest: #353534;
+  --color-surface-variant: #353534;
+
+  /* Brand red (accent text + buttons share one red — no pink) */
+  /* Lightened from #e23b35 to meet WCAG 2.1 AA 4.5:1 contrast on #131313 */
+  --color-primary: #f04540;
+  --color-primary-container: #d32f2f;
+  --color-on-primary: #680008;
+  --color-on-primary-container: #fff2f0;
+  --color-inverse-primary: #ba1a20;
+  --color-error: #ffb4ab;
+  --color-error-container: #93000a;
+
+  /* Text / on-colors */
+  --color-on-background: #e5e2e1;
+  --color-on-surface: #e5e2e1;
+  --color-on-surface-variant: #b8b5b3;
+  --color-secondary: #c8c6c5;
+  --color-tertiary: #c8c6c6;
+  --color-outline: #ab8985;
+  --color-outline-variant: #5b403d;
+
+  /* shadcn/ui compatibility (NotFound, sonner, tooltip) */
+  --color-foreground: #e5e2e1;
+  --color-card: #201f1f;
+  --color-card-foreground: #e5e2e1;
+  --color-popover: #201f1f;
+  --color-popover-foreground: #e5e2e1;
+  --color-primary-foreground: #fff2f0;
+  --color-secondary-foreground: #131313;
+  --color-muted: #2a2a2a;
+  --color-muted-foreground: #b8b5b3;
+  --color-accent: #d32f2f;
+  --color-accent-foreground: #fff2f0;
+  --color-destructive: #ba1a20;
+  --color-destructive-foreground: #fff2f0;
+  --color-border: #353534;
+  --color-input: #353534;
+  --color-ring: #d32f2f;
+
+  /* Fonts */
+  --font-display-lg: "Anton", sans-serif;
+  --font-headline-lg: "Anton", sans-serif;
+  --font-headline-md: "Anton", sans-serif;
+  --font-body-lg: "Hanken Grotesk", sans-serif;
+  --font-body-md: "Hanken Grotesk", sans-serif;
+  --font-title-lg: "Hanken Grotesk", sans-serif;
+  --font-label-bold: "Hanken Grotesk", sans-serif;
+
+  /* Type scale */
+  --text-display-lg: 72px;
+  --text-display-lg--line-height: 80px;
+  --text-display-lg--letter-spacing: 0.02em;
+  --text-display-lg--font-weight: 400;
+  --text-headline-lg: 48px;
+  --text-headline-lg--line-height: 56px;
+  --text-headline-lg--letter-spacing: 0.01em;
+  --text-headline-lg--font-weight: 400;
+  --text-headline-md: 32px;
+  --text-headline-md--line-height: 40px;
+  --text-headline-md--font-weight: 400;
+  --text-title-lg: 22px;
+  --text-title-lg--line-height: 28px;
+  --text-title-lg--font-weight: 700;
+  --text-body-lg: 18px;
+  --text-body-lg--line-height: 28px;
+  --text-body-md: 16px;
+  --text-body-md--line-height: 24px;
+  --text-label-bold: 14px;
+  --text-label-bold--line-height: 20px;
+  --text-label-bold--letter-spacing: 0.05em;
+  --text-label-bold--font-weight: 800;
+
+  /* Spacing / layout */
+  --spacing-gutter: 24px;
+  --spacing-margin-desktop: 64px;
+  --spacing-margin-mobile: 16px;
+  --container-max-width: 1440px;
+
+  /* Radii (design uses square edges) */
+  --radius: 0.25rem;
+  --radius-sm: 0.125rem;
+  --radius-md: 0.25rem;
+  --radius-lg: 0.5rem;
+  --radius-xl: 0.75rem;
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+  body {
+    background-color: var(--color-background);
+    color: var(--color-on-background);
+    font-family: "Hanken Grotesk", system-ui, sans-serif;
+    font-size: 16px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection {
+    background-color: var(--color-primary);
+    color: var(--color-on-primary);
+  }
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  a[href] {
+    cursor: pointer;
+  }
+  /* Visible keyboard focus for accessibility */
+  a:focus-visible,
+  button:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible,
+  [tabindex]:focus-visible {
+    outline: 2px solid #e23b35;
+    outline-offset: 2px;
+  }
+}
+
+/* ---- Material Symbols icon font ---- */
+.material-symbols-outlined {
+  font-family: "Material Symbols Outlined";
+  font-weight: normal;
+  font-style: normal;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  font-variation-settings: "FILL" 0, "wght" 400, "GRAD" 0, "opsz" 24;
+}
+
+/* Touch devices can't hover, so the grayscale→color hover reveal never fires.
+   Show those photos in full color by default on non-hover (mobile) devices.
+   Full-bleed hero/background scrims opt out via the `.scrim` class. */
+@media (hover: none), (max-width: 767px) {
+  img.grayscale:not(.scrim) {
+    filter: none !important;
+  }
+}
+
+/* ---- Industrial design effects (from Stitch) ---- */
+.beveled-edge {
+  box-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.1),
+    inset 0 -1px 0 0 rgba(0, 0, 0, 0.5);
+}
+.industrial-glow {
+  transition: box-shadow 0.3s ease;
+}
+.industrial-glow:hover {
+  box-shadow: 0 0 25px rgba(211, 47, 47, 0.6);
+}
+.concrete-texture {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.022) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.022) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+.metallic-gradient {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05) 0%, rgba(0, 0, 0, 0.1) 100%),
+    #d32f2f;
+}
+.rivet {
+  display: inline-block;
+  width: 4px;
+  height: 4px;
+  background: #474746;
+  border-radius: 50%;
+  box-shadow: inset 1px 1px 1px rgba(0, 0, 0, 0.8);
+}
+.legal-prose h2 {
+  font-family: "Anton", sans-serif;
+  text-transform: uppercase;
+  font-size: 1.6rem;
+  line-height: 1.1;
+  color: #e5e2e1;
+  margin-top: 2.25rem;
+  margin-bottom: 0.5rem;
+}
+.legal-prose h3 {
+  font-family: "Hanken Grotesk", sans-serif;
+  font-weight: 700;
+  font-size: 1.1rem;
+  color: #e5e2e1;
+  margin-top: 1.25rem;
+  margin-bottom: 0.25rem;
+}
+.legal-prose a {
+  color: #e23b35;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.legal-prose ul {
+  list-style: disc;
+  padding-left: 1.5rem;
+}
+.legal-prose ul li {
+  margin-bottom: 0.4rem;
+}
+.legal-prose strong {
+  color: #e5e2e1;
+}
+
+.bevel-stone {
+  border: 1px solid #353534;
+  box-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.08),
+    inset 0 -2px 0 0 rgba(0, 0, 0, 0.6);
+}
+.industrial-divider {
+  height: 4px;
+  width: 100%;
+  background: repeating-linear-gradient(
+    -45deg,
+    #353534 0,
+    #353534 12px,
+    transparent 12px,
+    transparent 24px
+  );
+  border-top: 1px solid #353534;
+  border-bottom: 1px solid #353534;
+}
