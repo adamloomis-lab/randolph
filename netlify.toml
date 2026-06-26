@@ -1,0 +1,25 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+# Private time clock routes: clean empty-#root shell (no hydration mismatch, noindex).
+[[redirects]]
+  from = "/timeclock"
+  to = "/app-shell.html"
+  status = 200
+
+[[redirects]]
+  from = "/admin"
+  to = "/app-shell.html"
+  status = 200
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+[functions]
+  directory = "netlify/functions"
