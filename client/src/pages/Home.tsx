@@ -11,6 +11,16 @@ import { IMG } from "@/lib/images";
 import { useSeo } from "@/lib/useSeo";
 // @ts-expect-error - plain JS module shared with the prerender script
 import { PAGE_SEO, SITE, CITIES } from "@/lib/seoData.js";
+import { FloatField, IconCardSelect, SuccessCheck, type IconCardOption } from "@/components/FluidField";
+import { Trees, Layers, Frame, Truck, HelpCircle, Phone } from "lucide-react";
+
+const SERVICE_CARDS: IconCardOption[] = [
+  { value: "Landscaping", label: "Landscaping", icon: Trees },
+  { value: "Hardscaping", label: "Hardscaping", icon: Layers },
+  { value: "Custom Composite Deck", label: "Composite Deck", icon: Frame },
+  { value: "Concrete Services", label: "Concrete", icon: Truck },
+  { value: "Not Sure Yet", label: "Not Sure Yet", icon: HelpCircle },
+];
 
 const encode = (data: Record<string, string>) =>
   Object.keys(data)
@@ -58,6 +68,7 @@ export default function Home() {
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
+  const [firstName, setFirstName] = useState("");
 
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
@@ -73,6 +84,7 @@ export default function Home() {
       return;
     }
     setSubmitting(true);
+    const captured = form.name.trim().split(/\s+/)[0];
     try {
       const res = await fetch("/", {
         method: "POST",
@@ -80,6 +92,7 @@ export default function Home() {
         body: encode({ "form-name": "contact", ...form }),
       });
       if (!res.ok) throw new Error("Submission failed");
+      setFirstName(captured);
       setSubmitted(true);
     } catch {
       setErrorMsg("Something went wrong. Please try again or call us directly.");
@@ -274,42 +287,44 @@ export default function Home() {
           </Reveal>
 
           {submitted ? (
-            <div className="bg-surface-container-low border-l-4 border-primary p-8 text-left">
-              <p className="font-headline-md text-headline-md uppercase text-primary mb-2">Thanks!</p>
-              <p className="text-on-surface-variant font-body-lg">
-                We received your request and will be in touch within one business day. For anything urgent, call
-                <a href={BUSINESS.phoneHref} className="text-primary hover:underline"> {BUSINESS.phone}</a>.
+            <div className="bg-surface-container-low border-l-4 border-primary p-8 flex flex-col items-center text-center">
+              <SuccessCheck />
+              <p className="font-display-lg text-headline-md uppercase text-primary mt-4 mb-2">
+                Thank You, {firstName}!
               </p>
+              <p className="text-on-surface-variant font-body-lg max-w-md">
+                We got your request and we'll be in touch within one business day. For anything urgent, tap to call.
+              </p>
+              <a
+                href={BUSINESS.phoneHref}
+                className="mt-6 inline-flex items-center gap-2 bg-primary-container text-on-primary-container font-label-bold text-label-bold uppercase px-6 py-3 metallic-gradient beveled-edge active:scale-95 transition-all"
+              >
+                <Phone size={18} strokeWidth={2} aria-hidden="true" /> {BUSINESS.phone}
+              </a>
             </div>
           ) : (
-            <form name="contact" method="POST" data-netlify="true" data-netlify-honeypot="bot-field" onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-6 text-left">
+            <form name="contact" method="POST" data-netlify="true" data-netlify-honeypot="bot-field" onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-5 text-left">
               <input type="hidden" name="form-name" value="contact" />
               <p hidden>
                 <label>Don't fill this out: <input name="bot-field" onChange={handleChange} /></label>
               </p>
-              <div className="space-y-2">
-                <label className="font-label-bold text-label-bold uppercase text-on-surface-variant">Full Name</label>
-                <input name="name" type="text" value={form.name} onChange={handleChange} placeholder="John Doe" className="w-full bg-surface-container-low border-b-2 border-surface-container-highest focus:border-primary focus:outline-none text-on-surface transition-all py-4 px-2" required />
+              <FloatField idPrefix="home" name="name" label="Full Name" value={form.name} onChange={handleChange} autoComplete="name" required />
+              <FloatField idPrefix="home" name="email" label="Email Address" type="email" value={form.email} onChange={handleChange} autoComplete="email" required />
+              <div className="md:col-span-2">
+                <IconCardSelect
+                  name="service"
+                  legend="Service Interested In"
+                  options={SERVICE_CARDS}
+                  value={form.service}
+                  onChange={(v) => setForm((f) => ({ ...f, service: v }))}
+                />
               </div>
-              <div className="space-y-2">
-                <label className="font-label-bold text-label-bold uppercase text-on-surface-variant">Email Address</label>
-                <input name="email" type="email" value={form.email} onChange={handleChange} placeholder="john@example.com" className="w-full bg-surface-container-low border-b-2 border-surface-container-highest focus:border-primary focus:outline-none text-on-surface transition-all py-4 px-2" required />
-              </div>
-              <div className="md:col-span-2 space-y-2">
-                <label htmlFor="home-service" className="font-label-bold text-label-bold uppercase text-on-surface-variant">Service Interested In</label>
-                <select id="home-service" name="service" value={form.service} onChange={handleChange} className="w-full bg-surface-container-low border-b-2 border-surface-container-highest focus:border-primary focus:outline-none text-on-surface transition-all py-4 px-2 appearance-none cursor-pointer">
-                  {["Landscaping", "Hardscaping", "Custom Composite Deck", "Concrete Services", "Not Sure Yet"].map((o) => (
-                    <option key={o} value={o}>{o}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="md:col-span-2 space-y-2">
-                <label className="font-label-bold text-label-bold uppercase text-on-surface-variant">Project Details</label>
-                <textarea name="message" value={form.message} onChange={handleChange} placeholder="Tell us about your project..." rows={4} className="w-full bg-surface-container-low border-b-2 border-surface-container-highest focus:border-primary focus:outline-none text-on-surface transition-all py-4 px-2 resize-y" />
+              <div className="md:col-span-2">
+                <FloatField idPrefix="home" name="message" label="Project Details" textarea rows={4} value={form.message} onChange={handleChange} />
               </div>
               {errorMsg && <div className="md:col-span-2 text-error font-label-bold text-label-bold uppercase">{errorMsg}</div>}
               <div className="md:col-span-2">
-                <button type="submit" disabled={submitting} className="w-full bg-primary-container text-on-primary-container font-label-bold text-label-bold uppercase py-6 metallic-gradient beveled-edge industrial-glow transition-all text-xl active:scale-95 disabled:opacity-60">
+                <button type="submit" disabled={submitting} className="alm-sheen relative overflow-hidden w-full bg-primary-container text-on-primary-container font-label-bold text-label-bold uppercase py-6 metallic-gradient beveled-edge industrial-glow transition-all text-xl active:scale-95 disabled:opacity-60">
                   {submitting ? "Sending..." : "Get Your Free Quote"}
                 </button>
               </div>

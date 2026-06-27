@@ -1,13 +1,13 @@
 import { jsx, jsxs, Fragment } from "react/jsx-runtime";
-import { Component, createContext, useState, useEffect, useRef, useMemo, StrictMode } from "react";
+import { useState, useEffect, Component, createContext, useRef, useMemo, StrictMode } from "react";
 import { renderToString } from "react-dom/server";
-import { useLocation, Link, useRoute, Redirect, Switch, Route, Router as Router$1 } from "wouter";
+import { Link, useLocation, useRoute, Redirect, Switch, Route, Router as Router$1 } from "wouter";
 import { useTheme } from "next-themes";
 import { Toaster as Toaster$1 } from "sonner";
 import * as TooltipPrimitive from "@radix-ui/react-tooltip";
 import { clsx } from "clsx";
+import { Phone, MapPin, Hammer, AlertTriangle, RotateCcw, Menu, X, ArrowUpRight, Clock, ThumbsUp, Camera, Trees, Layers, Frame, Truck, HelpCircle, Zap, AlertCircle, Home as Home$1 } from "lucide-react";
 import { twMerge } from "tailwind-merge";
-import { AlertTriangle, RotateCcw, X, Menu, AlertCircle, Home as Home$1 } from "lucide-react";
 import { Slot } from "@radix-ui/react-slot";
 import { cva } from "class-variance-authority";
 const Toaster = ({ ...props }) => {
@@ -39,6 +39,153 @@ function TooltipProvider({
       "data-slot": "tooltip-provider",
       delayDuration,
       ...props
+    }
+  );
+}
+const STORAGE_KEY = "cookie-consent";
+function CookieBanner() {
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    if (localStorage.getItem(STORAGE_KEY)) return;
+    const timer = setTimeout(() => setVisible(true), 700);
+    return () => clearTimeout(timer);
+  }, []);
+  function accept() {
+    localStorage.setItem(STORAGE_KEY, "accepted");
+    setVisible(false);
+  }
+  function decline() {
+    localStorage.setItem(STORAGE_KEY, "declined");
+    setVisible(false);
+  }
+  if (!visible) return null;
+  return /* @__PURE__ */ jsxs(
+    "div",
+    {
+      role: "region",
+      "aria-label": "Cookie consent",
+      className: "fixed bottom-0 inset-x-0 z-50 bg-surface-container-lowest border-t-4 border-primary px-margin-mobile md:px-margin-desktop py-5 flex flex-col sm:flex-row items-start sm:items-center gap-4 shadow-2xl",
+      children: [
+        /* @__PURE__ */ jsxs("p", { className: "flex-1 text-on-surface-variant font-body-md text-body-md leading-relaxed", children: [
+          "This site uses cookies to keep things running smoothly. We never sell your data.",
+          " ",
+          /* @__PURE__ */ jsx(Link, { href: "/privacy", className: "text-primary underline underline-offset-4 hover:text-on-surface transition-colors", children: "Privacy Policy" })
+        ] }),
+        /* @__PURE__ */ jsxs("div", { className: "flex gap-3 shrink-0", children: [
+          /* @__PURE__ */ jsx(
+            "button",
+            {
+              onClick: accept,
+              className: "bg-primary-container text-on-primary-container font-label-bold text-label-bold uppercase px-5 py-2 metallic-gradient beveled-edge industrial-glow transition-all active:scale-95 hover:opacity-90",
+              children: "Sounds Good"
+            }
+          ),
+          /* @__PURE__ */ jsx(
+            "button",
+            {
+              onClick: decline,
+              className: "border border-surface-container-highest text-on-surface-variant font-label-bold text-label-bold uppercase px-5 py-2 hover:text-on-surface hover:border-primary transition-colors",
+              children: "No Thanks"
+            }
+          )
+        ] })
+      ]
+    }
+  );
+}
+const BUSINESS = {
+  // Identity
+  name: "Randolph Construction",
+  // Web
+  url: "https://randolph.construction",
+  defaultImage: "/images/randolph/hero-firepit.webp",
+  // Phone / email (one set of formats — never hardcode these elsewhere)
+  phone: "(330) 400-6338",
+  phoneDigits: "+13304006338",
+  phoneHref: "tel:+13304006338",
+  email: "bmrandolph1111@gmail.com",
+  emailHref: "mailto:bmrandolph1111@gmail.com",
+  // Address — Wadsworth-based; no public street address
+  address: {
+    locality: "Wadsworth",
+    region: "OH",
+    regionFull: "Ohio"
+  },
+  // Service area
+  serviceCity: "Wadsworth",
+  serviceAreaCopy: "Wadsworth, Medina, Norton, Barberton, and surrounding Northeast Ohio communities",
+  // Services
+  services: ["Landscaping", "Hardscaping", "Custom Composite Decks", "Concrete"]
+};
+const MAPS_HREF$1 = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+  `${BUSINESS.serviceCity}, ${BUSINESS.address.regionFull}`
+)}`;
+function MobileActionBar() {
+  return /* @__PURE__ */ jsx("div", { className: "md:hidden fixed inset-x-3 bottom-3 z-40 print:hidden", role: "region", "aria-label": "Quick actions", children: /* @__PURE__ */ jsxs("div", { className: "flex items-stretch gap-2 rounded-2xl border border-white/10 bg-surface-container/85 backdrop-blur-xl p-2 shadow-[0_12px_40px_-8px_rgba(0,0,0,0.85)]", children: [
+    /* @__PURE__ */ jsxs(
+      "a",
+      {
+        href: BUSINESS.phoneHref,
+        "aria-label": `Call ${BUSINESS.name}`,
+        className: "flex flex-1 flex-col items-center justify-center gap-1 rounded-xl border border-white/10 bg-white/5 py-2.5 text-on-surface active:scale-95 transition-transform",
+        children: [
+          /* @__PURE__ */ jsx(Phone, { size: 20, strokeWidth: 2, "aria-hidden": "true" }),
+          /* @__PURE__ */ jsx("span", { className: "font-label-bold text-[10px] uppercase tracking-wide", children: "Call" })
+        ]
+      }
+    ),
+    /* @__PURE__ */ jsxs(
+      "a",
+      {
+        href: MAPS_HREF$1,
+        target: "_blank",
+        rel: "noopener noreferrer",
+        "aria-label": "Get directions to our service area",
+        className: "flex flex-1 flex-col items-center justify-center gap-1 rounded-xl border border-white/10 bg-white/5 py-2.5 text-on-surface active:scale-95 transition-transform",
+        children: [
+          /* @__PURE__ */ jsx(MapPin, { size: 20, strokeWidth: 2, "aria-hidden": "true" }),
+          /* @__PURE__ */ jsx("span", { className: "font-label-bold text-[10px] uppercase tracking-wide", children: "Directions" })
+        ]
+      }
+    ),
+    /* @__PURE__ */ jsxs(
+      Link,
+      {
+        href: "/contact",
+        "aria-label": "Request a free estimate",
+        className: "alm-sheen alm-glow-pulse relative overflow-hidden flex flex-[1.4] flex-col items-center justify-center gap-1 rounded-xl bg-primary-container text-on-primary-container py-2.5 metallic-gradient beveled-edge active:scale-95 transition-transform",
+        children: [
+          /* @__PURE__ */ jsx(Hammer, { size: 20, strokeWidth: 2, "aria-hidden": "true" }),
+          /* @__PURE__ */ jsx("span", { className: "font-label-bold text-[10px] uppercase tracking-wide", children: "Free Estimate" })
+        ]
+      }
+    )
+  ] }) });
+}
+function StickyEstimate() {
+  const [show, setShow] = useState(false);
+  useEffect(() => {
+    const onScroll = () => setShow(window.scrollY > window.innerHeight * 0.8);
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+  return /* @__PURE__ */ jsx(
+    "div",
+    {
+      className: `hidden md:block fixed bottom-6 right-6 z-40 print:hidden transition-all duration-500 ${show ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-6 opacity-0"}`,
+      children: /* @__PURE__ */ jsxs(
+        Link,
+        {
+          href: "/contact",
+          "aria-label": "Request a free estimate",
+          className: "alm-sheen alm-glow-pulse relative overflow-hidden inline-flex items-center gap-3 rounded-full bg-primary-container text-on-primary-container px-7 py-4 font-label-bold text-label-bold uppercase tracking-wide metallic-gradient beveled-edge shadow-[0_12px_40px_-8px_rgba(0,0,0,0.8)] hover:scale-[1.03] active:scale-95 transition-transform",
+          children: [
+            /* @__PURE__ */ jsx(Hammer, { size: 20, strokeWidth: 2, "aria-hidden": "true" }),
+            "Get a Free Estimate"
+          ]
+        }
+      )
     }
   );
 }
@@ -398,29 +545,6 @@ function Img({ src, loading = "lazy", decoding = "async", ...rest }) {
     }
   );
 }
-const BUSINESS = {
-  // Identity
-  name: "Randolph Construction",
-  // Web
-  url: "https://randolph.construction",
-  defaultImage: "/images/randolph/hero-firepit.webp",
-  // Phone / email (one set of formats — never hardcode these elsewhere)
-  phone: "(330) 400-6338",
-  phoneDigits: "+13304006338",
-  phoneHref: "tel:+13304006338",
-  email: "bmrandolph1111@gmail.com",
-  emailHref: "mailto:bmrandolph1111@gmail.com",
-  // Address — Wadsworth-based; no public street address
-  address: {
-    locality: "Wadsworth",
-    region: "OH",
-    regionFull: "Ohio"
-  },
-  // Service area
-  serviceCity: "Wadsworth",
-  // Services
-  services: ["Landscaping", "Hardscaping", "Custom Composite Decks", "Concrete"]
-};
 const B = "/images/randolph";
 const RC = {
   logo: `${B}/logo-randolph.webp`,
@@ -439,12 +563,28 @@ const LINKS = [
   { label: "Gallery", href: "/gallery" },
   { label: "Contact", href: "/contact" }
 ];
+const MAPS_HREF = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+  `${BUSINESS.serviceCity}, ${BUSINESS.address.regionFull}`
+)}`;
 function Nav() {
   const [open, setOpen] = useState(false);
   const [location] = useLocation();
   useEffect(() => {
     setOpen(false);
   }, [location]);
+  useEffect(() => {
+    if (!open) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKey = (e) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = prev;
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
   const isActive = (href) => href === "/" ? location === "/" : location.startsWith(href);
   return /* @__PURE__ */ jsxs("header", { className: "fixed top-0 w-full z-50 border-b-2 border-surface-container-highest bg-background/95 backdrop-blur-md shadow-[0_4px_0_0_rgba(0,0,0,0.5)]", children: [
     /* @__PURE__ */ jsx(
@@ -484,31 +624,142 @@ function Nav() {
         "button",
         {
           className: "md:hidden text-on-surface p-1",
-          onClick: () => setOpen(!open),
-          "aria-label": "Toggle menu",
-          children: open ? /* @__PURE__ */ jsx(X, { size: 26 }) : /* @__PURE__ */ jsx(Menu, { size: 26 })
+          onClick: () => setOpen(true),
+          "aria-label": "Open menu",
+          "aria-expanded": open,
+          children: /* @__PURE__ */ jsx(Menu, { size: 26 })
         }
       )
     ] }),
-    open && /* @__PURE__ */ jsxs("div", { className: "md:hidden flex flex-col gap-1 px-margin-mobile pb-6 pt-2 bg-surface-container-lowest border-t border-surface-container-highest", children: [
-      LINKS.map((l) => /* @__PURE__ */ jsx(
-        Link,
-        {
-          href: l.href,
-          className: `font-label-bold text-label-bold uppercase py-3 border-b border-surface-container-highest ${isActive(l.href) ? "text-primary" : "text-on-surface-variant"}`,
-          children: l.label
-        },
-        l.href
-      )),
-      /* @__PURE__ */ jsx(
-        Link,
-        {
-          href: "/contact",
-          className: "text-center mt-4 bg-primary-container text-on-primary-container font-label-bold text-label-bold uppercase py-4 metallic-gradient beveled-edge",
-          children: "Get an Estimate"
-        }
-      )
-    ] })
+    /* @__PURE__ */ jsxs(
+      "div",
+      {
+        className: `md:hidden fixed inset-0 z-50 transition-opacity duration-300 ${open ? "opacity-100" : "pointer-events-none opacity-0"}`,
+        "aria-hidden": !open,
+        children: [
+          /* @__PURE__ */ jsx(
+            "button",
+            {
+              tabIndex: open ? 0 : -1,
+              "aria-label": "Close menu",
+              onClick: () => setOpen(false),
+              className: "absolute inset-0 bg-background/80 backdrop-blur-sm"
+            }
+          ),
+          /* @__PURE__ */ jsxs(
+            "div",
+            {
+              role: "dialog",
+              "aria-modal": "true",
+              "aria-label": "Site menu",
+              className: `absolute right-0 top-0 h-full w-[88%] max-w-sm bg-surface-container-lowest border-l-2 border-surface-container-highest shadow-[-20px_0_60px_-10px_rgba(0,0,0,0.85)] concrete-texture flex flex-col transition-transform duration-300 ease-out ${open ? "translate-x-0" : "translate-x-full"}`,
+              children: [
+                /* @__PURE__ */ jsxs("div", { className: "flex items-center justify-between px-6 h-20 border-b-2 border-surface-container-highest shrink-0", children: [
+                  /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-3", children: [
+                    /* @__PURE__ */ jsx(Img, { src: RC.logo, alt: "Randolph Construction", className: "h-10 w-10 object-contain" }),
+                    /* @__PURE__ */ jsx("span", { className: "font-display-lg text-xl uppercase tracking-tight text-on-surface leading-none", children: "Randolph" })
+                  ] }),
+                  /* @__PURE__ */ jsx(
+                    "button",
+                    {
+                      onClick: () => setOpen(false),
+                      "aria-label": "Close menu",
+                      className: "w-10 h-10 rounded-full border border-surface-container-highest flex items-center justify-center text-on-surface hover:text-primary hover:border-primary transition-colors active:scale-95",
+                      children: /* @__PURE__ */ jsx(X, { size: 22 })
+                    }
+                  )
+                ] }),
+                /* @__PURE__ */ jsxs("div", { className: "flex-1 overflow-y-auto", children: [
+                  /* @__PURE__ */ jsx("div", { className: "px-6 pt-6", children: /* @__PURE__ */ jsxs("span", { className: "inline-flex items-center gap-2 bg-primary-container/15 border border-primary/40 text-primary font-label-bold text-[11px] uppercase tracking-widest px-3 py-1.5", children: [
+                    /* @__PURE__ */ jsxs("span", { className: "relative flex h-2 w-2", "aria-hidden": "true", children: [
+                      /* @__PURE__ */ jsx("span", { className: "alm-dot-pulse absolute inline-flex h-full w-full rounded-full bg-primary" }),
+                      /* @__PURE__ */ jsx("span", { className: "relative inline-flex h-2 w-2 rounded-full bg-primary" })
+                    ] }),
+                    "Free Estimates · One Crew, All the Skills"
+                  ] }) }),
+                  /* @__PURE__ */ jsx("nav", { className: "px-6 pt-6 pb-2 flex flex-col", children: LINKS.map((l, i) => /* @__PURE__ */ jsxs(
+                    Link,
+                    {
+                      href: l.href,
+                      style: { transitionDelay: open ? `${100 + i * 60}ms` : "0ms" },
+                      className: `group flex items-center justify-between py-4 border-b border-surface-container-highest font-display-lg text-3xl uppercase tracking-tight transition-all duration-300 ${open ? "translate-x-0 opacity-100" : "translate-x-4 opacity-0"} ${isActive(l.href) ? "text-primary" : "text-on-surface hover:text-primary"}`,
+                      children: [
+                        l.label,
+                        /* @__PURE__ */ jsx(
+                          ArrowUpRight,
+                          {
+                            size: 22,
+                            className: "text-on-surface-variant transition-all group-hover:text-primary group-hover:translate-x-1 group-hover:-translate-y-1",
+                            "aria-hidden": "true"
+                          }
+                        )
+                      ]
+                    },
+                    l.href
+                  )) }),
+                  /* @__PURE__ */ jsxs("div", { className: "px-6 pt-6 space-y-3", children: [
+                    /* @__PURE__ */ jsxs(
+                      "a",
+                      {
+                        href: BUSINESS.phoneHref,
+                        className: "flex items-center justify-center gap-2 w-full bg-primary-container text-on-primary-container font-label-bold text-label-bold uppercase py-4 metallic-gradient beveled-edge industrial-glow active:scale-95 transition-all",
+                        children: [
+                          /* @__PURE__ */ jsx(Phone, { size: 18, strokeWidth: 2, "aria-hidden": "true" }),
+                          " Call ",
+                          BUSINESS.phone
+                        ]
+                      }
+                    ),
+                    /* @__PURE__ */ jsx(
+                      Link,
+                      {
+                        href: "/contact",
+                        className: "flex items-center justify-center gap-2 w-full border-2 border-surface-container-highest text-on-surface font-label-bold text-label-bold uppercase py-4 hover:border-primary hover:text-primary active:scale-95 transition-all",
+                        children: "Request an Estimate"
+                      }
+                    )
+                  ] }),
+                  /* @__PURE__ */ jsxs("div", { className: "px-6 py-7 mt-2 border-t border-surface-container-highest space-y-4", children: [
+                    /* @__PURE__ */ jsxs("a", { href: MAPS_HREF, target: "_blank", rel: "noopener noreferrer", className: "flex items-start gap-3 text-on-surface-variant hover:text-primary transition-colors", children: [
+                      /* @__PURE__ */ jsx(MapPin, { size: 18, className: "text-primary mt-0.5 shrink-0", "aria-hidden": "true" }),
+                      /* @__PURE__ */ jsx("span", { className: "font-body-md text-sm", children: BUSINESS.serviceAreaCopy })
+                    ] }),
+                    /* @__PURE__ */ jsxs("div", { className: "flex items-start gap-3 text-on-surface-variant", children: [
+                      /* @__PURE__ */ jsx(Clock, { size: 18, className: "text-primary mt-0.5 shrink-0", "aria-hidden": "true" }),
+                      /* @__PURE__ */ jsx("span", { className: "font-body-md text-sm", children: "By appointment · We reply within one business day" })
+                    ] }),
+                    /* @__PURE__ */ jsxs("div", { className: "flex gap-3 pt-1", children: [
+                      /* @__PURE__ */ jsx(
+                        "a",
+                        {
+                          href: "https://facebook.com",
+                          target: "_blank",
+                          rel: "noopener noreferrer",
+                          "aria-label": "Facebook",
+                          className: "w-10 h-10 flex items-center justify-center border border-surface-container-highest text-on-surface-variant hover:text-primary hover:border-primary transition-colors",
+                          children: /* @__PURE__ */ jsx(ThumbsUp, { size: 18, "aria-hidden": "true" })
+                        }
+                      ),
+                      /* @__PURE__ */ jsx(
+                        "a",
+                        {
+                          href: "https://instagram.com",
+                          target: "_blank",
+                          rel: "noopener noreferrer",
+                          "aria-label": "Instagram",
+                          className: "w-10 h-10 flex items-center justify-center border border-surface-container-highest text-on-surface-variant hover:text-primary hover:border-primary transition-colors",
+                          children: /* @__PURE__ */ jsx(Camera, { size: 18, "aria-hidden": "true" })
+                        }
+                      )
+                    ] })
+                  ] })
+                ] })
+              ]
+            }
+          )
+        ]
+      }
+    )
   ] });
 }
 const SITE = {
@@ -713,11 +964,11 @@ function Footer() {
         /* @__PURE__ */ jsx(
           "a",
           {
-            href: "https://adamloomis.online",
+            href: "https://adamloomismarketing.com",
             target: "_blank",
             rel: "noopener noreferrer",
             className: "text-primary hover:text-on-surface transition-colors",
-            children: "adamloomis.online"
+            children: "Adam Loomis Marketing"
           }
         )
       ] })
@@ -844,6 +1095,124 @@ function useSeo({ title, description, path, image, jsonLd }) {
     };
   }, [title, description, path, image, jsonLd]);
 }
+function FloatField({
+  name,
+  label: label2,
+  value,
+  onChange,
+  type = "text",
+  required,
+  textarea,
+  rows = 5,
+  idPrefix = "f",
+  autoComplete
+}) {
+  const id = `${idPrefix}-${name}`;
+  const input2 = "peer w-full bg-transparent px-4 pt-6 pb-2 font-body-md text-on-surface text-base placeholder-transparent outline-none";
+  const labelCls = "pointer-events-none absolute left-4 top-4 origin-left font-body-md text-base text-on-surface-variant transition-all duration-200 peer-focus:top-2 peer-focus:text-[10px] peer-focus:font-bold peer-focus:uppercase peer-focus:tracking-[0.18em] peer-focus:text-primary peer-[:not(:placeholder-shown)]:top-2 peer-[:not(:placeholder-shown)]:text-[10px] peer-[:not(:placeholder-shown)]:font-bold peer-[:not(:placeholder-shown)]:uppercase peer-[:not(:placeholder-shown)]:tracking-[0.18em] peer-[:not(:placeholder-shown)]:text-on-surface-variant";
+  return /* @__PURE__ */ jsxs("div", { className: "group relative border border-surface-container-highest bg-surface-container transition-all duration-300 focus-within:border-primary/70 focus-within:bg-surface-container-high focus-within:shadow-[0_0_26px_-8px_rgba(211,47,47,0.6)]", children: [
+    textarea ? /* @__PURE__ */ jsx(
+      "textarea",
+      {
+        id,
+        name,
+        rows,
+        required,
+        placeholder: " ",
+        value,
+        onChange,
+        className: `${input2} resize-y`
+      }
+    ) : /* @__PURE__ */ jsx(
+      "input",
+      {
+        id,
+        type,
+        name,
+        required,
+        autoComplete,
+        placeholder: " ",
+        value,
+        onChange,
+        className: input2
+      }
+    ),
+    /* @__PURE__ */ jsxs("label", { htmlFor: id, className: labelCls, children: [
+      label2,
+      required && /* @__PURE__ */ jsx("span", { className: "ml-1 text-primary", children: "*" })
+    ] }),
+    /* @__PURE__ */ jsx(
+      "span",
+      {
+        "aria-hidden": "true",
+        className: "pointer-events-none absolute bottom-0 left-1/2 h-0.5 w-[calc(100%-2rem)] -translate-x-1/2 scale-x-0 bg-primary transition-transform duration-300 peer-focus:scale-x-100"
+      }
+    )
+  ] });
+}
+function IconCardSelect({ options, value, onChange, name, legend }) {
+  return /* @__PURE__ */ jsxs("fieldset", { children: [
+    /* @__PURE__ */ jsx("legend", { className: "font-label-bold text-label-bold uppercase text-on-surface-variant mb-3", children: legend }),
+    /* @__PURE__ */ jsx("input", { type: "hidden", name, value }),
+    /* @__PURE__ */ jsx("div", { className: "grid grid-cols-2 sm:grid-cols-3 gap-3", children: options.map((opt) => {
+      const Icon = opt.icon;
+      const active = value === opt.value;
+      return /* @__PURE__ */ jsxs(
+        "button",
+        {
+          type: "button",
+          onClick: () => onChange(opt.value),
+          "aria-pressed": active,
+          className: `group flex flex-col items-center justify-center gap-2 px-3 py-4 border-2 text-center transition-all duration-200 beveled-edge active:scale-95 ${active ? "bg-primary-container text-on-primary-container border-primary metallic-gradient shadow-[0_0_22px_-6px_rgba(211,47,47,0.7)]" : "bg-surface-container border-surface-container-highest text-on-surface-variant hover:border-primary/60 hover:text-on-surface"}`,
+          children: [
+            /* @__PURE__ */ jsx(Icon, { size: 26, strokeWidth: 1.75, "aria-hidden": "true" }),
+            /* @__PURE__ */ jsx("span", { className: "font-label-bold text-[11px] leading-tight uppercase tracking-wide", children: opt.label })
+          ]
+        },
+        opt.value
+      );
+    }) })
+  ] });
+}
+function SuccessCheck() {
+  return /* @__PURE__ */ jsxs("svg", { viewBox: "0 0 52 52", className: "h-16 w-16", "aria-hidden": "true", children: [
+    /* @__PURE__ */ jsx(
+      "circle",
+      {
+        cx: "26",
+        cy: "26",
+        r: "24",
+        fill: "none",
+        stroke: "#f04540",
+        strokeWidth: "3",
+        strokeDasharray: "151",
+        strokeDashoffset: "151",
+        style: { animation: "alm-draw-check 0.6s ease forwards" }
+      }
+    ),
+    /* @__PURE__ */ jsx(
+      "path",
+      {
+        d: "M15 27 l7 7 l15 -16",
+        fill: "none",
+        stroke: "#f04540",
+        strokeWidth: "4",
+        strokeLinecap: "round",
+        strokeLinejoin: "round",
+        strokeDasharray: "40",
+        strokeDashoffset: "40",
+        style: { animation: "alm-draw-check 0.4s 0.5s ease forwards" }
+      }
+    )
+  ] });
+}
+const SERVICE_CARDS$1 = [
+  { value: "Landscaping", label: "Landscaping", icon: Trees },
+  { value: "Hardscaping", label: "Hardscaping", icon: Layers },
+  { value: "Custom Composite Deck", label: "Composite Deck", icon: Frame },
+  { value: "Concrete Services", label: "Concrete", icon: Truck },
+  { value: "Not Sure Yet", label: "Not Sure Yet", icon: HelpCircle }
+];
 const encode$1 = (data) => Object.keys(data).map((k) => `${encodeURIComponent(k)}=${encodeURIComponent(data[k])}`).join("&");
 const VALUE_PROPS = [
   { icon: "construction", title: "Built on Hard Work, Not Hype", desc: "This business started with a single lawn and a stubborn mower. Today it's grown through grit, skill, and a reputation for showing up and doing the job right." },
@@ -882,6 +1251,7 @@ function Home() {
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
+  const [firstName, setFirstName] = useState("");
   const handleChange = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value });
   };
@@ -893,6 +1263,7 @@ function Home() {
       return;
     }
     setSubmitting(true);
+    const captured = form.name.trim().split(/\s+/)[0];
     try {
       const res = await fetch("/", {
         method: "POST",
@@ -900,6 +1271,7 @@ function Home() {
         body: encode$1({ "form-name": "contact", ...form })
       });
       if (!res.ok) throw new Error("Submission failed");
+      setFirstName(captured);
       setSubmitted(true);
     } catch {
       setErrorMsg("Something went wrong. Please try again or call us directly.");
@@ -1035,40 +1407,47 @@ function Home() {
             /* @__PURE__ */ jsx("h2", { className: "font-display-lg text-4xl md:text-display-lg uppercase mb-4", children: "Ready to Build Something You're Proud Of?" }),
             /* @__PURE__ */ jsx("p", { className: "text-on-surface-variant font-body-lg mb-12 max-w-xl mx-auto", children: "Serving Wadsworth, Medina, Norton, Barberton, and the surrounding Northeast Ohio area." })
           ] }),
-          submitted ? /* @__PURE__ */ jsxs("div", { className: "bg-surface-container-low border-l-4 border-primary p-8 text-left", children: [
-            /* @__PURE__ */ jsx("p", { className: "font-headline-md text-headline-md uppercase text-primary mb-2", children: "Thanks!" }),
-            /* @__PURE__ */ jsxs("p", { className: "text-on-surface-variant font-body-lg", children: [
-              "We received your request and will be in touch within one business day. For anything urgent, call",
-              /* @__PURE__ */ jsxs("a", { href: BUSINESS.phoneHref, className: "text-primary hover:underline", children: [
-                " ",
-                BUSINESS.phone
-              ] }),
-              "."
-            ] })
-          ] }) : /* @__PURE__ */ jsxs("form", { name: "contact", method: "POST", "data-netlify": "true", "data-netlify-honeypot": "bot-field", onSubmit: handleSubmit, className: "grid grid-cols-1 md:grid-cols-2 gap-6 text-left", children: [
+          submitted ? /* @__PURE__ */ jsxs("div", { className: "bg-surface-container-low border-l-4 border-primary p-8 flex flex-col items-center text-center", children: [
+            /* @__PURE__ */ jsx(SuccessCheck, {}),
+            /* @__PURE__ */ jsxs("p", { className: "font-display-lg text-headline-md uppercase text-primary mt-4 mb-2", children: [
+              "Thank You, ",
+              firstName,
+              "!"
+            ] }),
+            /* @__PURE__ */ jsx("p", { className: "text-on-surface-variant font-body-lg max-w-md", children: "We got your request and we'll be in touch within one business day. For anything urgent, tap to call." }),
+            /* @__PURE__ */ jsxs(
+              "a",
+              {
+                href: BUSINESS.phoneHref,
+                className: "mt-6 inline-flex items-center gap-2 bg-primary-container text-on-primary-container font-label-bold text-label-bold uppercase px-6 py-3 metallic-gradient beveled-edge active:scale-95 transition-all",
+                children: [
+                  /* @__PURE__ */ jsx(Phone, { size: 18, strokeWidth: 2, "aria-hidden": "true" }),
+                  " ",
+                  BUSINESS.phone
+                ]
+              }
+            )
+          ] }) : /* @__PURE__ */ jsxs("form", { name: "contact", method: "POST", "data-netlify": "true", "data-netlify-honeypot": "bot-field", onSubmit: handleSubmit, className: "grid grid-cols-1 md:grid-cols-2 gap-5 text-left", children: [
             /* @__PURE__ */ jsx("input", { type: "hidden", name: "form-name", value: "contact" }),
             /* @__PURE__ */ jsx("p", { hidden: true, children: /* @__PURE__ */ jsxs("label", { children: [
               "Don't fill this out: ",
               /* @__PURE__ */ jsx("input", { name: "bot-field", onChange: handleChange })
             ] }) }),
-            /* @__PURE__ */ jsxs("div", { className: "space-y-2", children: [
-              /* @__PURE__ */ jsx("label", { className: "font-label-bold text-label-bold uppercase text-on-surface-variant", children: "Full Name" }),
-              /* @__PURE__ */ jsx("input", { name: "name", type: "text", value: form.name, onChange: handleChange, placeholder: "John Doe", className: "w-full bg-surface-container-low border-b-2 border-surface-container-highest focus:border-primary focus:outline-none text-on-surface transition-all py-4 px-2", required: true })
-            ] }),
-            /* @__PURE__ */ jsxs("div", { className: "space-y-2", children: [
-              /* @__PURE__ */ jsx("label", { className: "font-label-bold text-label-bold uppercase text-on-surface-variant", children: "Email Address" }),
-              /* @__PURE__ */ jsx("input", { name: "email", type: "email", value: form.email, onChange: handleChange, placeholder: "john@example.com", className: "w-full bg-surface-container-low border-b-2 border-surface-container-highest focus:border-primary focus:outline-none text-on-surface transition-all py-4 px-2", required: true })
-            ] }),
-            /* @__PURE__ */ jsxs("div", { className: "md:col-span-2 space-y-2", children: [
-              /* @__PURE__ */ jsx("label", { htmlFor: "home-service", className: "font-label-bold text-label-bold uppercase text-on-surface-variant", children: "Service Interested In" }),
-              /* @__PURE__ */ jsx("select", { id: "home-service", name: "service", value: form.service, onChange: handleChange, className: "w-full bg-surface-container-low border-b-2 border-surface-container-highest focus:border-primary focus:outline-none text-on-surface transition-all py-4 px-2 appearance-none cursor-pointer", children: ["Landscaping", "Hardscaping", "Custom Composite Deck", "Concrete Services", "Not Sure Yet"].map((o) => /* @__PURE__ */ jsx("option", { value: o, children: o }, o)) })
-            ] }),
-            /* @__PURE__ */ jsxs("div", { className: "md:col-span-2 space-y-2", children: [
-              /* @__PURE__ */ jsx("label", { className: "font-label-bold text-label-bold uppercase text-on-surface-variant", children: "Project Details" }),
-              /* @__PURE__ */ jsx("textarea", { name: "message", value: form.message, onChange: handleChange, placeholder: "Tell us about your project...", rows: 4, className: "w-full bg-surface-container-low border-b-2 border-surface-container-highest focus:border-primary focus:outline-none text-on-surface transition-all py-4 px-2 resize-y" })
-            ] }),
+            /* @__PURE__ */ jsx(FloatField, { idPrefix: "home", name: "name", label: "Full Name", value: form.name, onChange: handleChange, autoComplete: "name", required: true }),
+            /* @__PURE__ */ jsx(FloatField, { idPrefix: "home", name: "email", label: "Email Address", type: "email", value: form.email, onChange: handleChange, autoComplete: "email", required: true }),
+            /* @__PURE__ */ jsx("div", { className: "md:col-span-2", children: /* @__PURE__ */ jsx(
+              IconCardSelect,
+              {
+                name: "service",
+                legend: "Service Interested In",
+                options: SERVICE_CARDS$1,
+                value: form.service,
+                onChange: (v) => setForm((f) => ({ ...f, service: v }))
+              }
+            ) }),
+            /* @__PURE__ */ jsx("div", { className: "md:col-span-2", children: /* @__PURE__ */ jsx(FloatField, { idPrefix: "home", name: "message", label: "Project Details", textarea: true, rows: 4, value: form.message, onChange: handleChange }) }),
             errorMsg && /* @__PURE__ */ jsx("div", { className: "md:col-span-2 text-error font-label-bold text-label-bold uppercase", children: errorMsg }),
-            /* @__PURE__ */ jsx("div", { className: "md:col-span-2", children: /* @__PURE__ */ jsx("button", { type: "submit", disabled: submitting, className: "w-full bg-primary-container text-on-primary-container font-label-bold text-label-bold uppercase py-6 metallic-gradient beveled-edge industrial-glow transition-all text-xl active:scale-95 disabled:opacity-60", children: submitting ? "Sending..." : "Get Your Free Quote" }) })
+            /* @__PURE__ */ jsx("div", { className: "md:col-span-2", children: /* @__PURE__ */ jsx("button", { type: "submit", disabled: submitting, className: "alm-sheen relative overflow-hidden w-full bg-primary-container text-on-primary-container font-label-bold text-label-bold uppercase py-6 metallic-gradient beveled-edge industrial-glow transition-all text-xl active:scale-95 disabled:opacity-60", children: submitting ? "Sending..." : "Get Your Free Quote" }) })
           ] })
         ] })
       ] }),
@@ -1364,22 +1743,23 @@ function Gallery() {
   ] });
 }
 const encode = (data) => Object.keys(data).map((k) => `${encodeURIComponent(k)}=${encodeURIComponent(data[k])}`).join("&");
-const SERVICE_OPTIONS = [
-  "Landscaping",
-  "Hardscaping",
-  "Custom Composite Deck",
-  "Concrete Services",
-  "Not Sure Yet"
+const SERVICE_CARDS = [
+  { value: "Landscaping", label: "Landscaping", icon: Trees },
+  { value: "Hardscaping", label: "Hardscaping", icon: Layers },
+  { value: "Custom Composite Deck", label: "Composite Deck", icon: Frame },
+  { value: "Concrete Services", label: "Concrete", icon: Truck },
+  { value: "Not Sure Yet", label: "Not Sure Yet", icon: HelpCircle }
 ];
 function Contact() {
   useSeo({ ...PAGE_SEO["/contact"], path: "/contact" });
   useEffect(() => {
     window.scrollTo(0, 0);
   }, []);
-  const [form, setForm] = useState({ name: "", phone: "", email: "", service: SERVICE_OPTIONS[0], message: "" });
+  const [form, setForm] = useState({ name: "", phone: "", email: "", service: SERVICE_CARDS[0].value, message: "" });
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
+  const [firstName, setFirstName] = useState("");
   const handleChange = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value });
   };
@@ -1391,6 +1771,7 @@ function Contact() {
       return;
     }
     setSubmitting(true);
+    const captured = form.name.trim().split(/\s+/)[0];
     try {
       const res = await fetch("/", {
         method: "POST",
@@ -1398,6 +1779,7 @@ function Contact() {
         body: encode({ "form-name": "contact", ...form })
       });
       if (!res.ok) throw new Error("Submission failed");
+      setFirstName(captured);
       setSubmitted(true);
     } catch {
       setErrorMsg("Something went wrong. Please try again or call us directly.");
@@ -1405,7 +1787,6 @@ function Contact() {
       setSubmitting(false);
     }
   };
-  const inputClass = "bg-surface-container border-b border-surface-container-highest p-4 text-on-surface focus:border-primary focus:outline-none transition-all w-full";
   return /* @__PURE__ */ jsxs("div", { className: "bg-background text-on-background font-body-md", children: [
     /* @__PURE__ */ jsx(Nav, {}),
     /* @__PURE__ */ jsxs("main", { id: "main-content", className: "pt-32 pb-24", children: [
@@ -1445,14 +1826,26 @@ function Contact() {
             " Send Us a Message"
           ] }),
           /* @__PURE__ */ jsx("p", { className: "text-on-surface-variant font-body-md mb-8 relative z-10", children: "Fill out the form below and we'll follow up within one business day. No pressure, no obligation." }),
-          submitted ? /* @__PURE__ */ jsxs("div", { className: "relative z-10 bg-surface-container-low border-l-4 border-primary p-8", children: [
-            /* @__PURE__ */ jsx("p", { className: "font-headline-md text-headline-md uppercase text-primary mb-2", children: "Thanks!" }),
-            /* @__PURE__ */ jsxs("p", { className: "text-on-surface-variant font-body-lg", children: [
-              "We received your request and will be in touch within one business day. For anything urgent, call",
-              " ",
-              /* @__PURE__ */ jsx("a", { href: BUSINESS.phoneHref, className: "text-primary hover:underline", children: BUSINESS.phone }),
-              "."
-            ] })
+          submitted ? /* @__PURE__ */ jsxs("div", { className: "relative z-10 bg-surface-container-low border-l-4 border-primary p-8 flex flex-col items-center text-center", children: [
+            /* @__PURE__ */ jsx(SuccessCheck, {}),
+            /* @__PURE__ */ jsxs("p", { className: "font-display-lg text-headline-md uppercase text-primary mt-4 mb-2", children: [
+              "Thank You, ",
+              firstName,
+              "!"
+            ] }),
+            /* @__PURE__ */ jsx("p", { className: "text-on-surface-variant font-body-lg max-w-md", children: "We got your request and we'll be in touch within one business day. For anything urgent, tap to call." }),
+            /* @__PURE__ */ jsxs(
+              "a",
+              {
+                href: BUSINESS.phoneHref,
+                className: "mt-6 inline-flex items-center gap-2 bg-primary-container text-on-primary-container font-label-bold text-label-bold uppercase px-6 py-3 metallic-gradient beveled-edge active:scale-95 transition-all",
+                children: [
+                  /* @__PURE__ */ jsx(Phone, { size: 18, strokeWidth: 2, "aria-hidden": "true" }),
+                  " ",
+                  BUSINESS.phone
+                ]
+              }
+            )
           ] }) : /* @__PURE__ */ jsxs(
             "form",
             {
@@ -1461,44 +1854,38 @@ function Contact() {
               "data-netlify": "true",
               "data-netlify-honeypot": "bot-field",
               onSubmit: handleSubmit,
-              className: "grid grid-cols-1 md:grid-cols-2 gap-6 relative z-10",
+              className: "grid grid-cols-1 md:grid-cols-2 gap-5 relative z-10",
               children: [
                 /* @__PURE__ */ jsx("input", { type: "hidden", name: "form-name", value: "contact" }),
                 /* @__PURE__ */ jsx("p", { hidden: true, children: /* @__PURE__ */ jsxs("label", { children: [
                   "Don't fill this out: ",
                   /* @__PURE__ */ jsx("input", { name: "bot-field", onChange: handleChange })
                 ] }) }),
-                /* @__PURE__ */ jsxs("div", { className: "flex flex-col gap-2", children: [
-                  /* @__PURE__ */ jsx("label", { htmlFor: "contact-name", className: "font-label-bold text-label-bold uppercase text-on-surface-variant", children: "Full Name" }),
-                  /* @__PURE__ */ jsx("input", { id: "contact-name", name: "name", type: "text", value: form.name, onChange: handleChange, placeholder: "Your full name", className: inputClass, required: true })
-                ] }),
-                /* @__PURE__ */ jsxs("div", { className: "flex flex-col gap-2", children: [
-                  /* @__PURE__ */ jsx("label", { htmlFor: "contact-phone", className: "font-label-bold text-label-bold uppercase text-on-surface-variant", children: "Phone Number" }),
-                  /* @__PURE__ */ jsx("input", { id: "contact-phone", name: "phone", type: "tel", value: form.phone, onChange: handleChange, placeholder: "(330) 000-0000", className: inputClass, required: true })
-                ] }),
-                /* @__PURE__ */ jsxs("div", { className: "flex flex-col gap-2 md:col-span-2", children: [
-                  /* @__PURE__ */ jsx("label", { htmlFor: "contact-email", className: "font-label-bold text-label-bold uppercase text-on-surface-variant", children: "Email Address" }),
-                  /* @__PURE__ */ jsx("input", { id: "contact-email", name: "email", type: "email", value: form.email, onChange: handleChange, placeholder: "you@email.com", className: inputClass, required: true })
-                ] }),
-                /* @__PURE__ */ jsxs("div", { className: "flex flex-col gap-2 md:col-span-2", children: [
-                  /* @__PURE__ */ jsx("label", { htmlFor: "contact-service", className: "font-label-bold text-label-bold uppercase text-on-surface-variant", children: "Service Interested In" }),
-                  /* @__PURE__ */ jsx("select", { id: "contact-service", name: "service", value: form.service, onChange: handleChange, className: `${inputClass} appearance-none cursor-pointer`, children: SERVICE_OPTIONS.map((o) => /* @__PURE__ */ jsx("option", { value: o, children: o }, o)) })
-                ] }),
-                /* @__PURE__ */ jsxs("div", { className: "flex flex-col gap-2 md:col-span-2", children: [
-                  /* @__PURE__ */ jsx("label", { htmlFor: "contact-message", className: "font-label-bold text-label-bold uppercase text-on-surface-variant", children: "Tell Us About Your Project" }),
-                  /* @__PURE__ */ jsx("textarea", { id: "contact-message", name: "message", value: form.message, onChange: handleChange, placeholder: "Describe what you're looking to do — size, timeline, any details you have...", rows: 5, className: `${inputClass} resize-y` })
-                ] }),
+                /* @__PURE__ */ jsx(FloatField, { idPrefix: "contact", name: "name", label: "Full Name", value: form.name, onChange: handleChange, autoComplete: "name", required: true }),
+                /* @__PURE__ */ jsx(FloatField, { idPrefix: "contact", name: "phone", label: "Phone Number", type: "tel", value: form.phone, onChange: handleChange, autoComplete: "tel", required: true }),
+                /* @__PURE__ */ jsx("div", { className: "md:col-span-2", children: /* @__PURE__ */ jsx(FloatField, { idPrefix: "contact", name: "email", label: "Email Address", type: "email", value: form.email, onChange: handleChange, autoComplete: "email", required: true }) }),
+                /* @__PURE__ */ jsx("div", { className: "md:col-span-2", children: /* @__PURE__ */ jsx(
+                  IconCardSelect,
+                  {
+                    name: "service",
+                    legend: "Service Interested In",
+                    options: SERVICE_CARDS,
+                    value: form.service,
+                    onChange: (v) => setForm((f) => ({ ...f, service: v }))
+                  }
+                ) }),
+                /* @__PURE__ */ jsx("div", { className: "md:col-span-2", children: /* @__PURE__ */ jsx(FloatField, { idPrefix: "contact", name: "message", label: "Tell Us About Your Project", textarea: true, rows: 5, value: form.message, onChange: handleChange }) }),
                 errorMsg && /* @__PURE__ */ jsx("div", { className: "md:col-span-2 text-error font-label-bold text-label-bold uppercase", children: errorMsg }),
                 /* @__PURE__ */ jsx("div", { className: "md:col-span-2 mt-2", children: /* @__PURE__ */ jsxs(
                   "button",
                   {
                     type: "submit",
                     disabled: submitting,
-                    className: "w-full bg-primary-container text-on-primary-container py-5 font-display-lg text-headline-md uppercase tracking-wide metallic-gradient beveled-edge industrial-glow hover:scale-[1.01] active:scale-95 transition-all duration-300 flex items-center justify-center gap-4 disabled:opacity-60",
+                    className: "alm-sheen relative overflow-hidden w-full bg-primary-container text-on-primary-container py-5 font-display-lg text-headline-md uppercase tracking-wide metallic-gradient beveled-edge industrial-glow hover:scale-[1.01] active:scale-95 transition-all duration-300 flex items-center justify-center gap-4 disabled:opacity-60",
                     children: [
                       submitting ? "Sending..." : "Send My Request",
                       " ",
-                      /* @__PURE__ */ jsx("span", { "aria-hidden": "true", className: "material-symbols-outlined", children: "bolt" })
+                      /* @__PURE__ */ jsx(Zap, { size: 22, strokeWidth: 2, "aria-hidden": "true" })
                     ]
                   }
                 ) })
@@ -2889,10 +3276,20 @@ function Router() {
     /* @__PURE__ */ jsx(Route, { component: NotFound })
   ] });
 }
+function GlobalCtas() {
+  const [location] = useLocation();
+  if (location.startsWith("/timeclock") || location.startsWith("/admin")) return null;
+  return /* @__PURE__ */ jsxs(Fragment, { children: [
+    /* @__PURE__ */ jsx(MobileActionBar, {}),
+    /* @__PURE__ */ jsx(StickyEstimate, {})
+  ] });
+}
 function App() {
   return /* @__PURE__ */ jsx(ErrorBoundary, { children: /* @__PURE__ */ jsx(ThemeProvider, { defaultTheme: "dark", children: /* @__PURE__ */ jsxs(TooltipProvider, { children: [
     /* @__PURE__ */ jsx(Toaster, {}),
-    /* @__PURE__ */ jsx(Router, {})
+    /* @__PURE__ */ jsx(Router, {}),
+    /* @__PURE__ */ jsx(GlobalCtas, {}),
+    /* @__PURE__ */ jsx(CookieBanner, {})
   ] }) }) });
 }
 function render(path) {

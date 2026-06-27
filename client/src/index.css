@@ -244,3 +244,73 @@
   border-top: 1px solid #353534;
   border-bottom: 1px solid #353534;
 }
+
+/* ---- ALM UX elevation: form + CTA + nav motion ---- */
+@keyframes alm-draw-check {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes alm-glow-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(211, 47, 47, 0.55);
+  }
+  50% {
+    box-shadow: 0 0 22px 4px rgba(211, 47, 47, 0.65);
+  }
+}
+@keyframes alm-sheen {
+  0% {
+    transform: translateX(-120%) skewX(-18deg);
+  }
+  60%, 100% {
+    transform: translateX(220%) skewX(-18deg);
+  }
+}
+@keyframes alm-dot-pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.45;
+    transform: scale(1.6);
+  }
+}
+
+.alm-glow-pulse {
+  animation: alm-glow-pulse 2.6s ease-in-out infinite;
+}
+/* Sheen overlay: wrap a button in `.alm-sheen` (position:relative, overflow:hidden) */
+.alm-sheen::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 45%;
+  height: 100%;
+  background: linear-gradient(
+    100deg,
+    transparent,
+    rgba(255, 255, 255, 0.28),
+    transparent
+  );
+  transform: translateX(-120%) skewX(-18deg);
+  pointer-events: none;
+}
+.alm-sheen:hover::after {
+  animation: alm-sheen 0.9s ease forwards;
+}
+.alm-dot-pulse {
+  animation: alm-dot-pulse 1.5s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .alm-glow-pulse,
+  .alm-dot-pulse {
+    animation: none;
+  }
+  .alm-sheen:hover::after {
+    animation: none;
+  }
+}

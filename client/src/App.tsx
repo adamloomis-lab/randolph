@@ -1,7 +1,8 @@
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { Route, Switch } from "wouter";
+import { Route, Switch, useLocation } from "wouter";
 import CookieBanner from "./components/CookieBanner";
+import { MobileActionBar, StickyEstimate } from "./components/MobileActionBar";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import Home from "./pages/Home";
@@ -35,6 +36,18 @@ function Router() {
   );
 }
 
+function GlobalCtas() {
+  const [location] = useLocation();
+  // Keep the crew time-clock + admin screens free of marketing CTAs.
+  if (location.startsWith("/timeclock") || location.startsWith("/admin")) return null;
+  return (
+    <>
+      <MobileActionBar />
+      <StickyEstimate />
+    </>
+  );
+}
+
 export default function App() {
   return (
     <ErrorBoundary>
@@ -42,6 +55,7 @@ export default function App() {
         <TooltipProvider>
           <Toaster />
           <Router />
+          <GlobalCtas />
           <CookieBanner />
         </TooltipProvider>
       </ThemeProvider>
