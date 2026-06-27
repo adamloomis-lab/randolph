@@ -1,17 +1,14 @@
 import { useEffect, useState } from "react";
 import { Link } from "wouter";
-import { Phone, MapPin, Hammer } from "lucide-react";
+import { Phone, Hammer } from "lucide-react";
 // @ts-expect-error - plain JS module shared with the prerender script
 import { BUSINESS } from "@/config/business.js";
 
-const MAPS_HREF = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
-  `${BUSINESS.serviceCity}, ${BUSINESS.address.regionFull}`
-)}`;
-
 /**
  * Elevated floating mobile action bar: an off-edge capsule with a blurred
- * charcoal backdrop and big shadow. Glassy Call + Directions, and a brand-red
- * primary Estimate CTA with glow-pulse + sheen. Mobile only.
+ * charcoal backdrop and big shadow. A glassy Call and a brand-red primary
+ * Estimate CTA with glow-pulse + sheen. Mobile only. No Directions button:
+ * Randolph is a service-area contractor with no physical storefront.
  */
 export function MobileActionBar() {
   return (
@@ -20,28 +17,18 @@ export function MobileActionBar() {
         <a
           href={BUSINESS.phoneHref}
           aria-label={`Call ${BUSINESS.name}`}
-          className="flex flex-1 flex-col items-center justify-center gap-1 rounded-xl border border-white/10 bg-white/[0.08] py-3 text-on-surface hover:bg-white/[0.12] active:scale-95 transition-all"
+          className="flex flex-1 flex-row items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.08] py-3.5 text-on-surface hover:bg-white/[0.12] active:scale-95 transition-all"
         >
-          <Phone size={21} strokeWidth={2} className="text-primary" aria-hidden="true" />
-          <span className="font-label-bold text-[11px] uppercase tracking-wide">Call</span>
-        </a>
-        <a
-          href={MAPS_HREF}
-          target="_blank"
-          rel="noopener noreferrer"
-          aria-label="Get directions to our service area"
-          className="flex flex-1 flex-col items-center justify-center gap-1 rounded-xl border border-white/10 bg-white/[0.08] py-3 text-on-surface hover:bg-white/[0.12] active:scale-95 transition-all"
-        >
-          <MapPin size={21} strokeWidth={2} className="text-primary" aria-hidden="true" />
-          <span className="font-label-bold text-[11px] uppercase tracking-wide">Directions</span>
+          <Phone size={20} strokeWidth={2} className="text-primary" aria-hidden="true" />
+          <span className="font-label-bold text-[12px] uppercase tracking-wide">Call</span>
         </a>
         <Link
           href="/contact"
           aria-label="Request a free estimate"
-          className="alm-sheen-auto alm-glow-pulse relative overflow-hidden flex flex-[1.5] flex-col items-center justify-center gap-1 rounded-xl bg-primary-container text-on-primary-container py-3 metallic-gradient beveled-edge active:scale-95 transition-transform"
+          className="alm-sheen-auto alm-glow-pulse relative overflow-hidden flex flex-[1.4] flex-row items-center justify-center gap-2 rounded-xl bg-primary-container text-on-primary-container py-3.5 metallic-gradient beveled-edge active:scale-95 transition-transform"
         >
-          <Hammer size={21} strokeWidth={2} aria-hidden="true" />
-          <span className="font-label-bold text-[11px] uppercase tracking-wide">Free Estimate</span>
+          <Hammer size={20} strokeWidth={2} aria-hidden="true" />
+          <span className="font-label-bold text-[12px] uppercase tracking-wide">Free Estimate</span>
         </Link>
       </div>
     </div>

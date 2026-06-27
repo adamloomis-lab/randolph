@@ -13,10 +13,6 @@ const LINKS = [
   { label: "Contact", href: "/contact" },
 ];
 
-const MAPS_HREF = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
-  `${BUSINESS.serviceCity}, ${BUSINESS.address.regionFull}`
-)}`;
-
 export default function Nav() {
   const [open, setOpen] = useState(false);
   const [location] = useLocation();
@@ -189,10 +185,11 @@ export default function Nav() {
 
             {/* Contact footer */}
             <div className="px-6 py-7 mt-2 border-t border-surface-container-highest space-y-4">
-              <a href={MAPS_HREF} target="_blank" rel="noopener noreferrer" className="flex items-start gap-3 text-on-surface-variant hover:text-primary transition-colors">
+              {/* Service area, not a physical storefront, so this is a label, not a directions link */}
+              <div className="flex items-start gap-3 text-on-surface-variant">
                 <MapPin size={18} className="text-primary mt-0.5 shrink-0" aria-hidden="true" />
                 <span className="font-body-md text-sm">{BUSINESS.serviceAreaCopy}</span>
-              </a>
+              </div>
               <div className="flex items-start gap-3 text-on-surface-variant">
                 <Clock size={18} className="text-primary mt-0.5 shrink-0" aria-hidden="true" />
                 <span className="font-body-md text-sm">By appointment · We reply within one business day</span>
