@@ -43,7 +43,8 @@ export default function Nav() {
   const isActive = (href: string) => (href === "/" ? location === "/" : location.startsWith(href));
 
   return (
-    <header className="fixed top-0 w-full z-50 border-b-2 border-surface-container-highest bg-background/95 backdrop-blur-md shadow-[0_4px_0_0_rgba(0,0,0,0.5)]">
+    <>
+      <header className="fixed top-0 w-full z-50 border-b-2 border-surface-container-highest bg-background/95 backdrop-blur-md shadow-[0_4px_0_0_rgba(0,0,0,0.5)]">
       <a
         href="#main-content"
         className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-[60] focus:bg-primary-container focus:text-on-primary-container focus:px-4 focus:py-2 focus:font-label-bold focus:text-label-bold focus:uppercase"
@@ -92,8 +93,11 @@ export default function Nav() {
           <Menu size={26} />
         </button>
       </nav>
+      </header>
 
-      {/* Elevated mobile menu: blurred charcoal backdrop + right slide-in panel */}
+      {/* Elevated mobile menu: full-screen overlay (sibling of header so its fixed
+          positioning is viewport-relative; the header's backdrop-blur would otherwise
+          trap a nested fixed element to the header height) */}
       <div
         className={`md:hidden fixed inset-0 z-50 transition-opacity duration-300 ${
           open ? "opacity-100" : "pointer-events-none opacity-0"
@@ -217,6 +221,6 @@ export default function Nav() {
           </div>
         </div>
       </div>
-    </header>
+    </>
   );
 }

@@ -16,32 +16,32 @@ const MAPS_HREF = `https://www.google.com/maps/search/?api=1&query=${encodeURICo
 export function MobileActionBar() {
   return (
     <div className="md:hidden fixed inset-x-3 bottom-3 z-40 print:hidden" role="region" aria-label="Quick actions">
-      <div className="flex items-stretch gap-2 rounded-2xl border border-white/10 bg-surface-container/85 backdrop-blur-xl p-2 shadow-[0_12px_40px_-8px_rgba(0,0,0,0.85)]">
+      <div className="flex items-stretch gap-2 rounded-2xl border border-white/15 bg-surface-container-high/95 backdrop-blur-xl p-2 ring-1 ring-inset ring-white/5 shadow-[0_18px_50px_-10px_rgba(0,0,0,0.9),0_0_30px_-10px_rgba(211,47,47,0.5)]">
         <a
           href={BUSINESS.phoneHref}
           aria-label={`Call ${BUSINESS.name}`}
-          className="flex flex-1 flex-col items-center justify-center gap-1 rounded-xl border border-white/10 bg-white/5 py-2.5 text-on-surface active:scale-95 transition-transform"
+          className="flex flex-1 flex-col items-center justify-center gap-1 rounded-xl border border-white/10 bg-white/[0.08] py-3 text-on-surface hover:bg-white/[0.12] active:scale-95 transition-all"
         >
-          <Phone size={20} strokeWidth={2} aria-hidden="true" />
-          <span className="font-label-bold text-[10px] uppercase tracking-wide">Call</span>
+          <Phone size={21} strokeWidth={2} className="text-primary" aria-hidden="true" />
+          <span className="font-label-bold text-[11px] uppercase tracking-wide">Call</span>
         </a>
         <a
           href={MAPS_HREF}
           target="_blank"
           rel="noopener noreferrer"
           aria-label="Get directions to our service area"
-          className="flex flex-1 flex-col items-center justify-center gap-1 rounded-xl border border-white/10 bg-white/5 py-2.5 text-on-surface active:scale-95 transition-transform"
+          className="flex flex-1 flex-col items-center justify-center gap-1 rounded-xl border border-white/10 bg-white/[0.08] py-3 text-on-surface hover:bg-white/[0.12] active:scale-95 transition-all"
         >
-          <MapPin size={20} strokeWidth={2} aria-hidden="true" />
-          <span className="font-label-bold text-[10px] uppercase tracking-wide">Directions</span>
+          <MapPin size={21} strokeWidth={2} className="text-primary" aria-hidden="true" />
+          <span className="font-label-bold text-[11px] uppercase tracking-wide">Directions</span>
         </a>
         <Link
           href="/contact"
           aria-label="Request a free estimate"
-          className="alm-sheen alm-glow-pulse relative overflow-hidden flex flex-[1.4] flex-col items-center justify-center gap-1 rounded-xl bg-primary-container text-on-primary-container py-2.5 metallic-gradient beveled-edge active:scale-95 transition-transform"
+          className="alm-sheen-auto alm-glow-pulse relative overflow-hidden flex flex-[1.5] flex-col items-center justify-center gap-1 rounded-xl bg-primary-container text-on-primary-container py-3 metallic-gradient beveled-edge active:scale-95 transition-transform"
         >
-          <Hammer size={20} strokeWidth={2} aria-hidden="true" />
-          <span className="font-label-bold text-[10px] uppercase tracking-wide">Free Estimate</span>
+          <Hammer size={21} strokeWidth={2} aria-hidden="true" />
+          <span className="font-label-bold text-[11px] uppercase tracking-wide">Free Estimate</span>
         </Link>
       </div>
     </div>
