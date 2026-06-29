@@ -18,7 +18,7 @@ async function seedIfEmpty(s) {
   let jobs = await getJSON(s, 'jobs', null)
   let settings = await getJSON(s, 'settings', null)
   if (!employees) { employees = [{ id: id(), name: 'Sample Crew', rate: 25, pin: '1234', active: true }]; await s.setJSON('employees', employees) }
-  if (!jobs) { jobs = [{ id: id(), name: '123 Main St — Driveway' }, { id: id(), name: 'Smith Garage Floor' }]; await s.setJSON('jobs', jobs) }
+  if (!jobs) { jobs = [{ id: id(), name: '123 Main St — Driveway', address: '123 Main St, Wadsworth, OH' }, { id: id(), name: 'Smith Garage Floor', address: '' }]; await s.setJSON('jobs', jobs) }
   if (!settings) { settings = { adminPin: '1111', weekStartDay: 0, lockedThrough: null }; await s.setJSON('settings', settings) }
   return { employees, jobs, settings }
 }
@@ -34,12 +34,18 @@ async function listEntries(s) {
   return out
 }
 
+// Normalize a lunch value to minutes. Legacy entries stored a boolean (true = 30 min).
+function lunchMins(lunch) {
+  if (lunch === true) return 30
+  if (lunch === false || lunch == null) return 0
+  return Math.max(0, Math.round(Number(lunch) || 0))
+}
 // hours = (out - in) - lunch, clamped >= 0
 function calcHours(clockIn, clockOut, lunch) {
   const m = (t) => { const [h, mi] = String(t).split(':').map(Number); return h * 60 + mi }
   let mins = m(clockOut) - m(clockIn)
   if (mins < 0) mins += 24 * 60 // crossed midnight
-  if (lunch) mins -= 30
+  mins -= lunchMins(lunch)
   return Math.max(0, Math.round((mins / 60) * 100) / 100)
 }
 
@@ -111,11 +117,12 @@ export default async (req) => {
     const { date, clockIn, clockOut, lunch, jobName, address } = body
     if (!date || !clockIn || !clockOut) return bad('Missing clock times.')
     if (settings.lockedThrough && date <= settings.lockedThrough) return bad('That pay period is locked. Check with the office.')
-    const hours = calcHours(clockIn, clockOut, !!lunch)
+    const lm = lunchMins(lunch)
+    const hours = calcHours(clockIn, clockOut, lm)
     const pay = Math.round(hours * emp.rate * 100) / 100
     const entry = {
       id: id(), employeeId: emp.id, employeeName: emp.name, date, clockIn, clockOut,
-      lunch: !!lunch, jobName: jobName || '', address: address || '', hours, rate: emp.rate, pay,
+      lunch: lm, jobName: jobName || '', address: address || '', hours, rate: emp.rate, pay,
       createdAt: new Date().toISOString(),
     }
     await s.setJSON(`entry:${entry.id}`, entry)
@@ -158,7 +165,7 @@ export default async (req) => {
   if (a === 'save-job') {
     const j = body.job || {}
     if (!j.name) return bad('Job name required.')
-    const rec = { id: j.id || id(), name: j.name.trim() }
+    const rec = { id: j.id || id(), name: j.name.trim(), address: (j.address || '').trim() }
     const list = jobs.filter((x) => x.id !== rec.id); list.push(rec)
     await s.setJSON('jobs', list)
     return ok({ ok: true, jobs: list })
@@ -179,7 +186,7 @@ export default async (req) => {
     if (settings.lockedThrough && (cur.date <= settings.lockedThrough || date <= settings.lockedThrough)) return bad('That entry is in a locked pay period.')
     const clockIn = body.clockIn || cur.clockIn
     const clockOut = body.clockOut || cur.clockOut
-    const lunch = typeof body.lunch === 'boolean' ? body.lunch : cur.lunch
+    const lunch = body.lunch !== undefined ? lunchMins(body.lunch) : lunchMins(cur.lunch)
     const hours = calcHours(clockIn, clockOut, lunch)
     const updated = {
       ...cur, date, clockIn, clockOut, lunch,

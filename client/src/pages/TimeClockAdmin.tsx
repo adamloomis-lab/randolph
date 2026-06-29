@@ -3,8 +3,25 @@ import Nav from "@/components/Nav";
 import Footer from "@/components/Footer";
 
 type Emp = { id: string; name: string; rate: number; pin: string; active?: boolean };
-type Job = { id: string; name: string };
-type Entry = { id: string; employeeName: string; employeeId?: string; date: string; clockIn: string; clockOut: string; lunch: boolean; jobName: string; address: string; hours: number; rate: number; pay: number; createdAt?: string };
+type Job = { id: string; name: string; address?: string };
+type Entry = { id: string; employeeName: string; employeeId?: string; date: string; clockIn: string; clockOut: string; lunch: number | boolean; jobName: string; address: string; hours: number; rate: number; pay: number; createdAt?: string };
+
+// Lunch break options (minutes). Legacy entries stored a boolean (true = 30 min).
+const LUNCH_OPTIONS = [
+  { v: 0, label: "No lunch" },
+  { v: 30, label: "30 min" },
+  { v: 45, label: "45 min" },
+  { v: 60, label: "1 hour" },
+  { v: 90, label: "1.5 hours" },
+];
+const lunchToMins = (l: number | boolean) => (l === true ? 30 : Math.max(0, Number(l) || 0));
+const lunchLabel = (l: number | boolean) => {
+  const n = lunchToMins(l);
+  if (!n) return "None";
+  if (n % 60 === 0) return `${n / 60} hr`;
+  if (n > 60) return `${Math.floor(n / 60)} hr ${n % 60} min`;
+  return `${n} min`;
+};
 
 const API = "/.netlify/functions/timeclock";
 const label = "font-label-bold text-label-bold uppercase text-primary tracking-[0.2em] block mb-2";
@@ -258,7 +275,7 @@ function EntriesTab({ entries, jobs, lockedThrough, post, onChange }: { entries:
 
   const csv = () => {
     const head = ["Date", "Employee", "Job", "Address", "Clock In", "Clock Out", "Lunch", "Hours", "Rate", "Pay"];
-    const rows = filtered.map((e) => [e.date, e.employeeName, e.jobName, e.address, e.clockIn, e.clockOut, e.lunch ? "Yes" : "No", e.hours, e.rate, e.pay]);
+    const rows = filtered.map((e) => [e.date, e.employeeName, e.jobName, e.address, e.clockIn, e.clockOut, lunchLabel(e.lunch), e.hours, e.rate, e.pay]);
     const esc = (v: unknown) => `"${String(v).replace(/"/g, '""')}"`;
     const body = [head, ...rows].map((r) => r.map(esc).join(",")).join("\n");
     const blob = new Blob([body], { type: "text/csv" });
@@ -289,9 +306,14 @@ function EntriesTab({ entries, jobs, lockedThrough, post, onChange }: { entries:
               <div><label className={label}>Clock In</label><input type="time" className={input} value={editing.clockIn} onChange={(ev) => setEditing({ ...editing, clockIn: ev.target.value })} /></div>
               <div><label className={label}>Clock Out</label><input type="time" className={input} value={editing.clockOut} onChange={(ev) => setEditing({ ...editing, clockOut: ev.target.value })} /></div>
             </div>
-            <label className="flex items-center gap-2 text-sm text-on-surface"><input type="checkbox" className="w-4 h-4 accent-primary" checked={editing.lunch} onChange={(ev) => setEditing({ ...editing, lunch: ev.target.checked })} /> 30-min lunch</label>
+            <div><label className={label}>Lunch Break</label>
+              <select className={input} value={lunchToMins(editing.lunch)} onChange={(ev) => setEditing({ ...editing, lunch: Number(ev.target.value) })}>
+                {LUNCH_OPTIONS.map((o) => <option key={o.v} value={o.v}>{o.label}</option>)}
+                {!LUNCH_OPTIONS.some((o) => o.v === lunchToMins(editing.lunch)) && <option value={lunchToMins(editing.lunch)}>{lunchLabel(editing.lunch)}</option>}
+              </select>
+            </div>
             <div><label className={label}>Job</label>
-              <select className={input} value={editing.jobName} onChange={(ev) => setEditing({ ...editing, jobName: ev.target.value })}>
+              <select className={input} value={editing.jobName} onChange={(ev) => { const name = ev.target.value; const j = jobs.find((x) => x.name === name); setEditing({ ...editing, jobName: name, address: j ? (j.address || "") : editing.address }); }}>
                 <option value="">—</option>
                 {jobs.map((j) => <option key={j.id} value={j.name}>{j.name}</option>)}
                 {editing.jobName && !jobs.some((j) => j.name === editing.jobName) && <option value={editing.jobName}>{editing.jobName}</option>}
@@ -343,7 +365,7 @@ function EntriesTab({ entries, jobs, lockedThrough, post, onChange }: { entries:
                 <td className="p-3">{e.jobName || <span className="text-on-surface-variant">—</span>}</td>
                 <td className="p-3">{e.clockIn}</td>
                 <td className="p-3">{e.clockOut}</td>
-                <td className="p-3">{e.lunch ? "Yes" : "No"}</td>
+                <td className="p-3">{lunchLabel(e.lunch)}</td>
                 <td className="p-3 font-label-bold">{e.hours}</td>
                 <td className="p-3 font-label-bold text-primary">${e.pay.toFixed(2)}</td>
                 <td className="p-3 text-right whitespace-nowrap">
@@ -454,14 +476,15 @@ function CrewTab({ employees, post, onChange }: { employees: Emp[]; post: PostFn
 
 /* ---------------- Jobs (with man-hours / labor history) ---------------- */
 function JobsTab({ jobs, entries, post, onChange }: { jobs: Job[]; entries: Entry[]; post: PostFn; onChange: () => void }) {
-  const [name, setName] = useState("");
+  const blank = { id: "", name: "", address: "" };
+  const [f, setF] = useState<{ id: string; name: string; address: string }>(blank);
   const [err, setErr] = useState("");
   const save = async (e: React.FormEvent) => {
     e.preventDefault(); setErr("");
-    try { await post({ action: "save-job", job: { name } }); setName(""); onChange(); }
+    try { await post({ action: "save-job", job: { id: f.id || undefined, name: f.name, address: f.address } }); setF(blank); onChange(); }
     catch (e2) { setErr((e2 as Error).message); }
   };
-  const del = async (id: string) => { if (confirm("Remove this job? Its logged hours stay in your records.")) { await post({ action: "delete-job", id }); onChange(); } };
+  const del = async (id: string) => { if (confirm("Remove this job? Its logged hours stay in your records.")) { await post({ action: "delete-job", id }); if (f.id === id) setF(blank); onChange(); } };
 
   // Lifetime man-hours + straight-time labor cost per job name.
   const stats = useMemo(() => {
@@ -477,11 +500,15 @@ function JobsTab({ jobs, entries, post, onChange }: { jobs: Job[]; entries: Entr
   return (
     <div className="grid md:grid-cols-2 gap-8">
       <form onSubmit={save} className="bg-surface-container-lowest p-6 border-2 border-surface-container-highest space-y-5 h-fit">
-        <h3 className="font-headline-md text-headline-md uppercase">Add a Job</h3>
-        <p className="text-on-surface-variant text-sm">These show up in the crew's job dropdown so they barely have to type.</p>
-        <div><label className={label}>Job Name</label><input className={input} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. 123 Main St — Driveway" /></div>
+        <h3 className="font-headline-md text-headline-md uppercase">{f.id ? "Edit Job" : "Add a Job"}</h3>
+        <p className="text-on-surface-variant text-sm">These show up in the crew's job dropdown, and the address auto-fills for them at clock-out.</p>
+        <div><label className={label}>Job Name</label><input className={input} value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="e.g. 123 Main St — Driveway" /></div>
+        <div><label className={label}>Job Site Address</label><input className={input} value={f.address} onChange={(e) => setF({ ...f, address: e.target.value })} placeholder="123 Main St, Wadsworth, OH" /></div>
         {err && <p className="text-error text-sm font-label-bold">{err}</p>}
-        <button className={btn}>Add Job</button>
+        <div className="flex gap-3">
+          <button className={btn}>{f.id ? "Save Changes" : "Add Job"}</button>
+          {f.id && <button type="button" className={btnGhost} onClick={() => setF(blank)}>Cancel</button>}
+        </div>
       </form>
       <div className="space-y-3">
         {jobs.length === 0 && <p className="text-on-surface-variant">No jobs yet.</p>}
@@ -490,10 +517,18 @@ function JobsTab({ jobs, entries, post, onChange }: { jobs: Job[]; entries: Entr
           return (
             <div key={j.id} className="bg-surface-container-lowest p-4 border-2 border-surface-container-highest">
               <div className="flex items-start justify-between gap-3">
-                <span className="font-label-bold">{j.name}</span>
-                <button className="text-on-surface-variant hover:text-error text-xs underline shrink-0" onClick={() => del(j.id)}>Remove</button>
+                <div className="min-w-0">
+                  <div className="font-label-bold">{j.name}</div>
+                  {j.address
+                    ? <div className="text-on-surface-variant text-sm mt-0.5">{j.address}</div>
+                    : <div className="text-on-surface-variant/60 text-xs mt-0.5 italic">No address saved</div>}
+                </div>
+                <div className="flex gap-2 shrink-0">
+                  <button className={btnGhost} onClick={() => setF({ id: j.id, name: j.name, address: j.address || "" })}>Edit</button>
+                  <button className="text-on-surface-variant hover:text-error text-xs underline" onClick={() => del(j.id)}>Remove</button>
+                </div>
               </div>
-              <div className="text-on-surface-variant text-sm mt-1">
+              <div className="text-on-surface-variant text-sm mt-2">
                 <span className="text-primary font-label-bold">{(s?.hours || 0).toFixed(2)} man-hours</span>
                 {" · "}${(s?.pay || 0).toFixed(2)} labor to date
               </div>

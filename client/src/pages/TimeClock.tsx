@@ -3,7 +3,16 @@ import Nav from "@/components/Nav";
 import Footer from "@/components/Footer";
 
 type Emp = { id: string; name: string };
-type Job = { id: string; name: string };
+type Job = { id: string; name: string; address?: string };
+
+// Lunch break options (minutes deducted from the shift)
+const LUNCH_OPTIONS = [
+  { v: 0, label: "No lunch" },
+  { v: 30, label: "30 min" },
+  { v: 45, label: "45 min" },
+  { v: 60, label: "1 hour" },
+  { v: 90, label: "1.5 hours" },
+];
 
 const API = "/.netlify/functions/timeclock";
 const post = async (body: Record<string, unknown>) => {
@@ -27,13 +36,13 @@ const fmtTime = (t: string) => {
   return `${((h + 11) % 12) + 1}:${String(m).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`;
 };
 
-// hours = (out - in) - lunch, clamped >= 0
-function calcHours(clockIn: string, clockOut: string, lunch: boolean) {
+// hours = (out - in) - lunch minutes, clamped >= 0
+function calcHours(clockIn: string, clockOut: string, lunchMinutes: number) {
   if (!clockIn || !clockOut) return 0;
   const m = (t: string) => { const [h, mi] = t.split(":").map(Number); return h * 60 + mi; };
   let mins = m(clockOut) - m(clockIn);
   if (mins < 0) mins += 24 * 60;
-  if (lunch) mins -= 30;
+  mins -= Math.max(0, Number(lunchMinutes) || 0);
   return Math.max(0, Math.round((mins / 60) * 100) / 100);
 }
 
@@ -57,9 +66,16 @@ export default function TimeClock() {
   const [date, setDate] = useState(todayStr());
   const [clockIn, setClockIn] = useState("");
   const [clockOut, setClockOut] = useState("");
-  const [lunch, setLunch] = useState(true);
+  const [lunch, setLunch] = useState(30);
   const [jobName, setJobName] = useState("");
   const [address, setAddress] = useState("");
+
+  // Pick a job -> auto-fill its saved address so the crew don't retype it daily.
+  const onJobChange = (name: string) => {
+    setJobName(name);
+    const j = jobs.find((x) => x.name === name);
+    if (j) setAddress(j.address || "");
+  };
   const [done, setDone] = useState<null | { hours: number; pay: number }>(null);
   const [week, setWeek] = useState<null | { totalHours: number; regHours: number; otHours: number; gross: number }>(null);
   const [openPunch, setOpenPunch] = useState<null | { date: string; clockIn: string }>(null);
@@ -135,7 +151,7 @@ export default function TimeClock() {
   const clockOutNow = () => {
     if (!openPunch) return;
     setDate(openPunch.date); setClockIn(openPunch.clockIn); setClockOut(nowTime());
-    setLunch(true); setJobName(""); setAddress(""); setMode("manual");
+    setLunch(30); setJobName(""); setAddress(""); setMode("manual");
   };
   const cancelPunch = async () => {
     if (!confirm("Cancel your clock-in?")) return;
@@ -145,11 +161,11 @@ export default function TimeClock() {
     finally { setBusy(false); }
   };
   const startManual = () => {
-    setClockIn(""); setClockOut(""); setLunch(true); setJobName(""); setAddress(""); setDate(todayStr()); setMode("manual");
+    setClockIn(""); setClockOut(""); setLunch(30); setJobName(""); setAddress(""); setDate(todayStr()); setMode("manual");
   };
 
   const logAnother = () => {
-    setDone(null); setMode("home"); setClockIn(""); setClockOut(""); setLunch(true); setJobName(""); setAddress(""); setDate(todayStr());
+    setDone(null); setMode("home"); setClockIn(""); setClockOut(""); setLunch(30); setJobName(""); setAddress(""); setDate(todayStr());
   };
   const switchUser = () => { setMe(null); setPin(""); setDone(null); setOpenPunch(null); setMode("home"); logAnother(); };
 
@@ -256,14 +272,17 @@ export default function TimeClock() {
                 </div>
               </div>
 
-              <label className="flex items-center gap-3 bg-surface-container p-4 border border-surface-container-highest cursor-pointer">
-                <input type="checkbox" checked={lunch} onChange={(e) => setLunch(e.target.checked)} className="w-5 h-5 accent-primary" />
-                <span className="font-label-bold text-label-bold uppercase text-on-surface">Took a 30-min lunch <span className="text-on-surface-variant normal-case font-body-md">(subtracts 30 min)</span></span>
-              </label>
+              <div>
+                <label className={label} htmlFor="lunch">Lunch Break</label>
+                <select id="lunch" className={input} value={lunch} onChange={(e) => setLunch(Number(e.target.value))}>
+                  {LUNCH_OPTIONS.map((o) => <option key={o.v} value={o.v}>{o.label}</option>)}
+                </select>
+                <p className="text-on-surface-variant text-xs mt-1">Unpaid lunch is subtracted from your hours.</p>
+              </div>
 
               <div>
                 <label className={label} htmlFor="job">Job</label>
-                <select id="job" className={input} value={jobName} onChange={(e) => setJobName(e.target.value)}>
+                <select id="job" className={input} value={jobName} onChange={(e) => onJobChange(e.target.value)}>
                   <option value="">Select a job…</option>
                   {jobs.map((j) => <option key={j.id} value={j.name}>{j.name}</option>)}
                 </select>
@@ -271,7 +290,8 @@ export default function TimeClock() {
 
               <div>
                 <label className={label} htmlFor="addr">Job Address</label>
-                <input id="addr" className={input} value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Where were you working?" />
+                <input id="addr" className={input} value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Auto-fills when you pick a job" />
+                <p className="text-on-surface-variant text-xs mt-1">Picks up the saved address for the job. Edit it if you were somewhere else.</p>
               </div>
 
               {/* live total */}
