@@ -3018,7 +3018,7 @@ function CrewTab({ employees, post: post2, onChange }) {
     /* @__PURE__ */ jsxs("div", { className: "space-y-3", children: [
       employees.length === 0 && /* @__PURE__ */ jsx("p", { className: "text-on-surface-variant", children: "No crew yet. Add your first person." }),
       employees.map((e) => {
-        const link = `${typeof window !== "undefined" ? window.location.origin : ""}/timeclock?u=${e.id}`;
+        const link = `${typeof window !== "undefined" ? window.location.origin : ""}/employee?u=${e.id}`;
         return /* @__PURE__ */ jsxs("div", { className: "bg-surface-container-lowest p-4 border-2 border-surface-container-highest space-y-3", children: [
           /* @__PURE__ */ jsxs("div", { className: "flex items-start justify-between gap-3", children: [
             /* @__PURE__ */ jsxs("div", { children: [
@@ -3302,13 +3302,14 @@ function Router() {
     /* @__PURE__ */ jsx(Route, { path: "/accessibility", component: Accessibility }),
     /* @__PURE__ */ jsx(Route, { path: "/admin", component: TimeClockAdmin }),
     /* @__PURE__ */ jsx(Route, { path: "/timeclock", component: TimeClock }),
+    /* @__PURE__ */ jsx(Route, { path: "/employee", component: TimeClock }),
     /* @__PURE__ */ jsx(Route, { path: "/404", component: NotFound }),
     /* @__PURE__ */ jsx(Route, { component: NotFound })
   ] });
 }
 function GlobalCtas() {
   const [location] = useLocation();
-  if (location.startsWith("/timeclock") || location.startsWith("/admin")) return null;
+  if (location.startsWith("/timeclock") || location.startsWith("/employee") || location.startsWith("/admin")) return null;
   return /* @__PURE__ */ jsxs(Fragment, { children: [
     /* @__PURE__ */ jsx(MobileActionBar, {}),
     /* @__PURE__ */ jsx(StickyEstimate, {})
