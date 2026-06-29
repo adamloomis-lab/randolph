@@ -3200,6 +3200,22 @@ function ProjectsTab({ jobs, entries, post: post2, onChange }) {
     return { revenue, cost, profit, margin: revenue > 0 ? profit / revenue * 100 : 0, count };
   }, [jobs, entries]);
   const sorted = useMemo(() => [...jobs].sort((a, b) => (b.contractValue || 0) - (a.contractValue || 0)), [jobs]);
+  const byType = useMemo(() => {
+    const m = /* @__PURE__ */ new Map();
+    for (const j of jobs) {
+      const value = j.contractValue || 0;
+      if (value <= 0) continue;
+      const type = (j.workType || "Other").trim() || "Other";
+      const labor = laborForJob(j.name, entries).pay;
+      const mat = (j.materials || []).reduce((s, x) => s + (x.amount || 0), 0);
+      const c = m.get(type) || { count: 0, revenue: 0, cost: 0 };
+      c.count++;
+      c.revenue += value;
+      c.cost += labor + mat;
+      m.set(type, c);
+    }
+    return Array.from(m.entries()).map(([type, d]) => ({ type, count: d.count, revenue: d.revenue, profit: d.revenue - d.cost, margin: d.revenue > 0 ? (d.revenue - d.cost) / d.revenue * 100 : 0 })).sort((a, b) => b.margin - a.margin);
+  }, [jobs, entries]);
   const csv = () => {
     const head = ["Project", "Status", "Contract Value", "Labor Hours", "Labor $", "Materials $", "Total Cost", "Profit", "Margin %"];
     const rows = jobs.filter((j) => (j.contractValue || 0) > 0).map((j) => {
@@ -3225,6 +3241,23 @@ function ProjectsTab({ jobs, entries, post: post2, onChange }) {
       /* @__PURE__ */ jsx(Stat, { label: "Profit", value: money(totals.profit) }),
       /* @__PURE__ */ jsx(Stat, { label: "Avg Margin", value: `${totals.margin.toFixed(0)}%` })
     ] }),
+    byType.length > 0 && /* @__PURE__ */ jsxs("div", { className: "border-2 border-surface-container-highest", children: [
+      /* @__PURE__ */ jsx("div", { className: "bg-surface-container px-4 py-3 font-label-bold text-label-bold uppercase text-on-surface-variant tracking-widest", children: "Profit by Type of Work" }),
+      /* @__PURE__ */ jsx("div", { className: "overflow-x-auto", children: /* @__PURE__ */ jsxs("table", { className: "w-full text-sm", children: [
+        /* @__PURE__ */ jsx("thead", { className: "text-on-surface-variant uppercase text-xs tracking-wider", children: /* @__PURE__ */ jsx("tr", { children: ["Type of Work", "Jobs", "Revenue", "Profit", "Avg Margin"].map((h, i) => /* @__PURE__ */ jsx("th", { className: `p-3 font-label-bold ${i === 0 ? "text-left" : "text-right"}`, children: h }, h)) }) }),
+        /* @__PURE__ */ jsx("tbody", { children: byType.map((r) => /* @__PURE__ */ jsxs("tr", { className: "border-t border-surface-container-highest", children: [
+          /* @__PURE__ */ jsx("td", { className: "p-3 font-label-bold", children: r.type }),
+          /* @__PURE__ */ jsx("td", { className: "p-3 text-right", children: r.count }),
+          /* @__PURE__ */ jsx("td", { className: "p-3 text-right", children: money(r.revenue) }),
+          /* @__PURE__ */ jsx("td", { className: "p-3 text-right font-label-bold", style: { color: r.profit >= 0 ? "#5ec26a" : void 0 }, children: money(r.profit) }),
+          /* @__PURE__ */ jsxs("td", { className: "p-3 text-right font-label-bold text-primary", children: [
+            r.margin.toFixed(0),
+            "%"
+          ] })
+        ] }, r.type)) })
+      ] }) }),
+      /* @__PURE__ */ jsx("p", { className: "text-on-surface-variant/70 text-xs p-3", children: "Across all priced jobs. Shows which kind of work actually makes you money, so you know what to chase." })
+    ] }),
     /* @__PURE__ */ jsx("div", { className: "flex justify-end", children: /* @__PURE__ */ jsx("button", { className: btn, onClick: csv, disabled: totals.count === 0, children: "Export P&L CSV" }) }),
     /* @__PURE__ */ jsxs("div", { className: "space-y-4", children: [
       jobs.length === 0 && /* @__PURE__ */ jsx("p", { className: "text-on-surface-variant", children: "No jobs yet. Add one under the Jobs tab first." }),
@@ -3235,6 +3268,9 @@ function ProjectsTab({ jobs, entries, post: post2, onChange }) {
 function ProjectCard({ job, labor, post: post2, onChange }) {
   const [value, setValue] = useState(job.contractValue ? String(job.contractValue) : "");
   const [materials, setMaterials] = useState(job.materials?.length ? job.materials.map((m) => ({ ...m })) : []);
+  const [estH, setEstH] = useState(job.estHours ? String(job.estHours) : "");
+  const [estL, setEstL] = useState(job.estLabor ? String(job.estLabor) : "");
+  const [estM, setEstM] = useState(job.estMaterials ? String(job.estMaterials) : "");
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
   const matTotal = materials.reduce((s, m) => s + (Number(m.amount) || 0), 0);
@@ -3242,13 +3278,17 @@ function ProjectCard({ job, labor, post: post2, onChange }) {
   const cost = labor.pay + matTotal;
   const profit = v - cost;
   const margin = v > 0 ? profit / v * 100 : 0;
+  const eH = Number(estH) || 0, eL = Number(estL) || 0, eM = Number(estM) || 0;
+  const estCost = eL + eM;
+  const estMargin = v > 0 ? (v - estCost) / v * 100 : 0;
+  const hasBid = eH > 0 || eL > 0 || eM > 0;
   const addLine = () => setMaterials([...materials, { desc: "", amount: 0 }]);
   const setLine = (i, patch) => setMaterials(materials.map((m, idx) => idx === i ? { ...m, ...patch } : m));
   const rmLine = (i) => setMaterials(materials.filter((_, idx) => idx !== i));
   const save = async () => {
     setBusy(true);
     try {
-      await post2({ action: "save-job", job: { id: job.id, contractValue: v, materials: materials.map((m) => ({ desc: m.desc, amount: Number(m.amount) || 0 })) } });
+      await post2({ action: "save-job", job: { id: job.id, contractValue: v, materials: materials.map((m) => ({ desc: m.desc, amount: Number(m.amount) || 0 })), estHours: eH, estLabor: eL, estMaterials: eM } });
       setSaved(true);
       setTimeout(() => setSaved(false), 1600);
       onChange();
@@ -3275,6 +3315,26 @@ function ProjectCard({ job, labor, post: post2, onChange }) {
         /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-1 w-40", children: [
           /* @__PURE__ */ jsx("span", { className: "text-on-surface-variant", children: "$" }),
           /* @__PURE__ */ jsx("input", { className: mInput, inputMode: "decimal", value, onChange: (e) => setValue(e.target.value.replace(/[^0-9.]/g, "")), placeholder: "0" })
+        ] })
+      ] }),
+      /* @__PURE__ */ jsxs("div", { className: "py-3 border-b border-surface-container-highest", children: [
+        /* @__PURE__ */ jsxs("div", { className: "text-on-surface mb-2", children: [
+          "Your bid ",
+          /* @__PURE__ */ jsx("span", { className: "text-on-surface-variant text-xs", children: "(what you estimated, optional)" })
+        ] }),
+        /* @__PURE__ */ jsxs("div", { className: "grid grid-cols-3 gap-2", children: [
+          /* @__PURE__ */ jsxs("div", { children: [
+            /* @__PURE__ */ jsx("div", { className: "text-on-surface-variant text-xs mb-1", children: "Est. hours" }),
+            /* @__PURE__ */ jsx("input", { className: mInput, inputMode: "decimal", value: estH, onChange: (e) => setEstH(e.target.value.replace(/[^0-9.]/g, "")), placeholder: "0" })
+          ] }),
+          /* @__PURE__ */ jsxs("div", { children: [
+            /* @__PURE__ */ jsx("div", { className: "text-on-surface-variant text-xs mb-1", children: "Est. labor $" }),
+            /* @__PURE__ */ jsx("input", { className: mInput, inputMode: "decimal", value: estL, onChange: (e) => setEstL(e.target.value.replace(/[^0-9.]/g, "")), placeholder: "0" })
+          ] }),
+          /* @__PURE__ */ jsxs("div", { children: [
+            /* @__PURE__ */ jsx("div", { className: "text-on-surface-variant text-xs mb-1", children: "Est. materials $" }),
+            /* @__PURE__ */ jsx("input", { className: mInput, inputMode: "decimal", value: estM, onChange: (e) => setEstM(e.target.value.replace(/[^0-9.]/g, "")), placeholder: "0" })
+          ] })
         ] })
       ] }),
       /* @__PURE__ */ jsxs("div", { className: "flex items-center justify-between py-3 border-b border-surface-container-highest", children: [
@@ -3314,6 +3374,49 @@ function ProjectCard({ job, labor, post: post2, onChange }) {
           /* @__PURE__ */ jsx("span", { className: "text-on-surface-variant text-xs", children: "(labor + materials)" })
         ] }),
         /* @__PURE__ */ jsx("span", { className: "font-label-bold", children: money(cost) })
+      ] }),
+      hasBid && /* @__PURE__ */ jsxs("div", { className: "mt-1 mb-3 border border-surface-container-highest text-sm", children: [
+        /* @__PURE__ */ jsxs("div", { className: "grid grid-cols-4 bg-surface-container text-on-surface-variant text-[10px] uppercase tracking-wider", children: [
+          /* @__PURE__ */ jsx("div", { className: "p-2", children: "Bid vs actual" }),
+          /* @__PURE__ */ jsx("div", { className: "p-2 text-right", children: "Bid" }),
+          /* @__PURE__ */ jsx("div", { className: "p-2 text-right", children: "Actual" }),
+          /* @__PURE__ */ jsx("div", { className: "p-2 text-right", children: "Off by" })
+        ] }),
+        eH > 0 && /* @__PURE__ */ jsxs("div", { className: "grid grid-cols-4 border-t border-surface-container-highest", children: [
+          /* @__PURE__ */ jsx("div", { className: "p-2 text-on-surface-variant", children: "Hours" }),
+          /* @__PURE__ */ jsx("div", { className: "p-2 text-right", children: eH.toFixed(0) }),
+          /* @__PURE__ */ jsx("div", { className: "p-2 text-right text-on-surface", children: labor.hours.toFixed(1) }),
+          /* @__PURE__ */ jsxs("div", { className: `p-2 text-right font-label-bold ${labor.hours - eH > 0 ? "text-error" : "text-[#5ec26a]"}`, children: [
+            labor.hours - eH > 0 ? "+" : "",
+            (labor.hours - eH).toFixed(1),
+            " hrs"
+          ] })
+        ] }),
+        /* @__PURE__ */ jsxs("div", { className: "grid grid-cols-4 border-t border-surface-container-highest", children: [
+          /* @__PURE__ */ jsx("div", { className: "p-2 text-on-surface-variant", children: "Cost" }),
+          /* @__PURE__ */ jsx("div", { className: "p-2 text-right", children: money(estCost) }),
+          /* @__PURE__ */ jsx("div", { className: "p-2 text-right text-on-surface", children: money(cost) }),
+          /* @__PURE__ */ jsxs("div", { className: `p-2 text-right font-label-bold ${cost - estCost > 0 ? "text-error" : "text-[#5ec26a]"}`, children: [
+            cost - estCost >= 0 ? "+" : "-",
+            money(Math.abs(cost - estCost))
+          ] })
+        ] }),
+        v > 0 && /* @__PURE__ */ jsxs("div", { className: "grid grid-cols-4 border-t border-surface-container-highest bg-[#15110f]", children: [
+          /* @__PURE__ */ jsx("div", { className: "p-2 text-on-surface font-label-bold", children: "Margin" }),
+          /* @__PURE__ */ jsxs("div", { className: "p-2 text-right text-[#5ec26a]", children: [
+            estMargin.toFixed(0),
+            "%"
+          ] }),
+          /* @__PURE__ */ jsxs("div", { className: "p-2 text-right font-label-bold text-primary", children: [
+            margin.toFixed(0),
+            "%"
+          ] }),
+          /* @__PURE__ */ jsxs("div", { className: `p-2 text-right font-label-bold ${margin - estMargin < 0 ? "text-error" : "text-[#5ec26a]"}`, children: [
+            margin - estMargin >= 0 ? "+" : "",
+            (margin - estMargin).toFixed(0),
+            " pts"
+          ] })
+        ] })
       ] })
     ] }),
     /* @__PURE__ */ jsxs("div", { className: "flex items-center justify-between gap-3 px-5 py-4 border-t border-surface-container-highest bg-[#15110f]", children: [
