@@ -161,7 +161,9 @@ export default function TimeClock() {
     finally { setBusy(false); }
   };
   const startManual = () => {
-    setClockIn(""); setClockOut(""); setLunch(30); setJobName(""); setAddress(""); setDate(todayStr()); setMode("manual");
+    // Default both to the current time so the picker opens on a real value (not blank); the crew adjust from there.
+    const t = nowTime();
+    setClockIn(t); setClockOut(t); setLunch(30); setJobName(""); setAddress(""); setDate(todayStr()); setMode("manual");
   };
 
   const logAnother = () => {
