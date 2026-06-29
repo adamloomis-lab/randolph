@@ -2183,6 +2183,13 @@ function Accessibility() {
     ] })
   ] });
 }
+const LUNCH_OPTIONS$1 = [
+  { v: 0, label: "No lunch" },
+  { v: 30, label: "30 min" },
+  { v: 45, label: "45 min" },
+  { v: 60, label: "1 hour" },
+  { v: 90, label: "1.5 hours" }
+];
 const API$1 = "/.netlify/functions/timeclock";
 const post = async (body) => {
   const r = await fetch(API$1, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -2203,7 +2210,7 @@ const fmtTime = (t) => {
   const [h, m] = t.split(":").map(Number);
   return `${(h + 11) % 12 + 1}:${String(m).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`;
 };
-function calcHours(clockIn, clockOut, lunch) {
+function calcHours(clockIn, clockOut, lunchMinutes) {
   if (!clockIn || !clockOut) return 0;
   const m = (t) => {
     const [h, mi] = t.split(":").map(Number);
@@ -2211,7 +2218,7 @@ function calcHours(clockIn, clockOut, lunch) {
   };
   let mins = m(clockOut) - m(clockIn);
   if (mins < 0) mins += 24 * 60;
-  if (lunch) mins -= 30;
+  mins -= Math.max(0, Number(lunchMinutes) || 0);
   return Math.max(0, Math.round(mins / 60 * 100) / 100);
 }
 const label$1 = "font-label-bold text-label-bold uppercase text-primary tracking-[0.2em] block mb-2";
@@ -2229,9 +2236,14 @@ function TimeClock() {
   const [date, setDate] = useState(todayStr());
   const [clockIn, setClockIn] = useState("");
   const [clockOut, setClockOut] = useState("");
-  const [lunch, setLunch] = useState(true);
+  const [lunch, setLunch] = useState(30);
   const [jobName, setJobName] = useState("");
   const [address, setAddress] = useState("");
+  const onJobChange = (name) => {
+    setJobName(name);
+    const j = jobs.find((x) => x.name === name);
+    if (j) setAddress(j.address || "");
+  };
   const [done, setDone] = useState(null);
   const [week, setWeek] = useState(null);
   const [openPunch, setOpenPunch] = useState(null);
@@ -2317,7 +2329,7 @@ function TimeClock() {
     setDate(openPunch.date);
     setClockIn(openPunch.clockIn);
     setClockOut(nowTime());
-    setLunch(true);
+    setLunch(30);
     setJobName("");
     setAddress("");
     setMode("manual");
@@ -2337,7 +2349,7 @@ function TimeClock() {
   const startManual = () => {
     setClockIn("");
     setClockOut("");
-    setLunch(true);
+    setLunch(30);
     setJobName("");
     setAddress("");
     setDate(todayStr());
@@ -2348,7 +2360,7 @@ function TimeClock() {
     setMode("home");
     setClockIn("");
     setClockOut("");
-    setLunch(true);
+    setLunch(30);
     setJobName("");
     setAddress("");
     setDate(todayStr());
@@ -2485,23 +2497,22 @@ function TimeClock() {
               /* @__PURE__ */ jsx("input", { id: "out", type: "time", className: input$1, value: clockOut, onChange: (e) => setClockOut(e.target.value) })
             ] })
           ] }),
-          /* @__PURE__ */ jsxs("label", { className: "flex items-center gap-3 bg-surface-container p-4 border border-surface-container-highest cursor-pointer", children: [
-            /* @__PURE__ */ jsx("input", { type: "checkbox", checked: lunch, onChange: (e) => setLunch(e.target.checked), className: "w-5 h-5 accent-primary" }),
-            /* @__PURE__ */ jsxs("span", { className: "font-label-bold text-label-bold uppercase text-on-surface", children: [
-              "Took a 30-min lunch ",
-              /* @__PURE__ */ jsx("span", { className: "text-on-surface-variant normal-case font-body-md", children: "(subtracts 30 min)" })
-            ] })
+          /* @__PURE__ */ jsxs("div", { children: [
+            /* @__PURE__ */ jsx("label", { className: label$1, htmlFor: "lunch", children: "Lunch Break" }),
+            /* @__PURE__ */ jsx("select", { id: "lunch", className: input$1, value: lunch, onChange: (e) => setLunch(Number(e.target.value)), children: LUNCH_OPTIONS$1.map((o) => /* @__PURE__ */ jsx("option", { value: o.v, children: o.label }, o.v)) }),
+            /* @__PURE__ */ jsx("p", { className: "text-on-surface-variant text-xs mt-1", children: "Unpaid lunch is subtracted from your hours." })
           ] }),
           /* @__PURE__ */ jsxs("div", { children: [
             /* @__PURE__ */ jsx("label", { className: label$1, htmlFor: "job", children: "Job" }),
-            /* @__PURE__ */ jsxs("select", { id: "job", className: input$1, value: jobName, onChange: (e) => setJobName(e.target.value), children: [
+            /* @__PURE__ */ jsxs("select", { id: "job", className: input$1, value: jobName, onChange: (e) => onJobChange(e.target.value), children: [
               /* @__PURE__ */ jsx("option", { value: "", children: "Select a job…" }),
               jobs.map((j) => /* @__PURE__ */ jsx("option", { value: j.name, children: j.name }, j.id))
             ] })
           ] }),
           /* @__PURE__ */ jsxs("div", { children: [
             /* @__PURE__ */ jsx("label", { className: label$1, htmlFor: "addr", children: "Job Address" }),
-            /* @__PURE__ */ jsx("input", { id: "addr", className: input$1, value: address, onChange: (e) => setAddress(e.target.value), placeholder: "Where were you working?" })
+            /* @__PURE__ */ jsx("input", { id: "addr", className: input$1, value: address, onChange: (e) => setAddress(e.target.value), placeholder: "Auto-fills when you pick a job" }),
+            /* @__PURE__ */ jsx("p", { className: "text-on-surface-variant text-xs mt-1", children: "Picks up the saved address for the job. Edit it if you were somewhere else." })
           ] }),
           /* @__PURE__ */ jsxs("div", { className: "flex justify-between items-center bg-surface-container p-4 border-l-4 border-primary", children: [
             /* @__PURE__ */ jsx("span", { className: "font-label-bold text-label-bold uppercase text-on-surface-variant tracking-widest", children: "Today's Total" }),
@@ -2520,6 +2531,21 @@ function TimeClock() {
     /* @__PURE__ */ jsx(Footer, {})
   ] });
 }
+const LUNCH_OPTIONS = [
+  { v: 0, label: "No lunch" },
+  { v: 30, label: "30 min" },
+  { v: 45, label: "45 min" },
+  { v: 60, label: "1 hour" },
+  { v: 90, label: "1.5 hours" }
+];
+const lunchToMins = (l) => l === true ? 30 : Math.max(0, Number(l) || 0);
+const lunchLabel = (l) => {
+  const n = lunchToMins(l);
+  if (!n) return "None";
+  if (n % 60 === 0) return `${n / 60} hr`;
+  if (n > 60) return `${Math.floor(n / 60)} hr ${n % 60} min`;
+  return `${n} min`;
+};
 const API = "/.netlify/functions/timeclock";
 const label = "font-label-bold text-label-bold uppercase text-primary tracking-[0.2em] block mb-2";
 const input = "bg-surface-container border-b border-surface-container-highest p-3 text-on-surface focus:border-primary focus:outline-none transition-all w-full";
@@ -2774,7 +2800,7 @@ function EntriesTab({ entries, jobs, lockedThrough, post: post2, onChange }) {
   };
   const csv = () => {
     const head = ["Date", "Employee", "Job", "Address", "Clock In", "Clock Out", "Lunch", "Hours", "Rate", "Pay"];
-    const rows = filtered.map((e) => [e.date, e.employeeName, e.jobName, e.address, e.clockIn, e.clockOut, e.lunch ? "Yes" : "No", e.hours, e.rate, e.pay]);
+    const rows = filtered.map((e) => [e.date, e.employeeName, e.jobName, e.address, e.clockIn, e.clockOut, lunchLabel(e.lunch), e.hours, e.rate, e.pay]);
     const esc = (v) => `"${String(v).replace(/"/g, '""')}"`;
     const body = [head, ...rows].map((r) => r.map(esc).join(",")).join("\n");
     const blob = new Blob([body], { type: "text/csv" });
@@ -2821,13 +2847,20 @@ function EntriesTab({ entries, jobs, lockedThrough, post: post2, onChange }) {
           /* @__PURE__ */ jsx("input", { type: "time", className: input, value: editing.clockOut, onChange: (ev) => setEditing({ ...editing, clockOut: ev.target.value }) })
         ] })
       ] }),
-      /* @__PURE__ */ jsxs("label", { className: "flex items-center gap-2 text-sm text-on-surface", children: [
-        /* @__PURE__ */ jsx("input", { type: "checkbox", className: "w-4 h-4 accent-primary", checked: editing.lunch, onChange: (ev) => setEditing({ ...editing, lunch: ev.target.checked }) }),
-        " 30-min lunch"
+      /* @__PURE__ */ jsxs("div", { children: [
+        /* @__PURE__ */ jsx("label", { className: label, children: "Lunch Break" }),
+        /* @__PURE__ */ jsxs("select", { className: input, value: lunchToMins(editing.lunch), onChange: (ev) => setEditing({ ...editing, lunch: Number(ev.target.value) }), children: [
+          LUNCH_OPTIONS.map((o) => /* @__PURE__ */ jsx("option", { value: o.v, children: o.label }, o.v)),
+          !LUNCH_OPTIONS.some((o) => o.v === lunchToMins(editing.lunch)) && /* @__PURE__ */ jsx("option", { value: lunchToMins(editing.lunch), children: lunchLabel(editing.lunch) })
+        ] })
       ] }),
       /* @__PURE__ */ jsxs("div", { children: [
         /* @__PURE__ */ jsx("label", { className: label, children: "Job" }),
-        /* @__PURE__ */ jsxs("select", { className: input, value: editing.jobName, onChange: (ev) => setEditing({ ...editing, jobName: ev.target.value }), children: [
+        /* @__PURE__ */ jsxs("select", { className: input, value: editing.jobName, onChange: (ev) => {
+          const name = ev.target.value;
+          const j = jobs.find((x) => x.name === name);
+          setEditing({ ...editing, jobName: name, address: j ? j.address || "" : editing.address });
+        }, children: [
           /* @__PURE__ */ jsx("option", { value: "", children: "—" }),
           jobs.map((j) => /* @__PURE__ */ jsx("option", { value: j.name, children: j.name }, j.id)),
           editing.jobName && !jobs.some((j) => j.name === editing.jobName) && /* @__PURE__ */ jsx("option", { value: editing.jobName, children: editing.jobName })
@@ -2891,7 +2924,7 @@ function EntriesTab({ entries, jobs, lockedThrough, post: post2, onChange }) {
           /* @__PURE__ */ jsx("td", { className: "p-3", children: e.jobName || /* @__PURE__ */ jsx("span", { className: "text-on-surface-variant", children: "—" }) }),
           /* @__PURE__ */ jsx("td", { className: "p-3", children: e.clockIn }),
           /* @__PURE__ */ jsx("td", { className: "p-3", children: e.clockOut }),
-          /* @__PURE__ */ jsx("td", { className: "p-3", children: e.lunch ? "Yes" : "No" }),
+          /* @__PURE__ */ jsx("td", { className: "p-3", children: lunchLabel(e.lunch) }),
           /* @__PURE__ */ jsx("td", { className: "p-3 font-label-bold", children: e.hours }),
           /* @__PURE__ */ jsxs("td", { className: "p-3 font-label-bold text-primary", children: [
             "$",
@@ -3019,14 +3052,15 @@ function CrewTab({ employees, post: post2, onChange }) {
   ] });
 }
 function JobsTab({ jobs, entries, post: post2, onChange }) {
-  const [name, setName] = useState("");
+  const blank = { id: "", name: "", address: "" };
+  const [f, setF] = useState(blank);
   const [err, setErr] = useState("");
   const save = async (e) => {
     e.preventDefault();
     setErr("");
     try {
-      await post2({ action: "save-job", job: { name } });
-      setName("");
+      await post2({ action: "save-job", job: { id: f.id || void 0, name: f.name, address: f.address } });
+      setF(blank);
       onChange();
     } catch (e2) {
       setErr(e2.message);
@@ -3035,6 +3069,7 @@ function JobsTab({ jobs, entries, post: post2, onChange }) {
   const del = async (id) => {
     if (confirm("Remove this job? Its logged hours stay in your records.")) {
       await post2({ action: "delete-job", id });
+      if (f.id === id) setF(blank);
       onChange();
     }
   };
@@ -3049,14 +3084,21 @@ function JobsTab({ jobs, entries, post: post2, onChange }) {
   }, [entries]);
   return /* @__PURE__ */ jsxs("div", { className: "grid md:grid-cols-2 gap-8", children: [
     /* @__PURE__ */ jsxs("form", { onSubmit: save, className: "bg-surface-container-lowest p-6 border-2 border-surface-container-highest space-y-5 h-fit", children: [
-      /* @__PURE__ */ jsx("h3", { className: "font-headline-md text-headline-md uppercase", children: "Add a Job" }),
-      /* @__PURE__ */ jsx("p", { className: "text-on-surface-variant text-sm", children: "These show up in the crew's job dropdown so they barely have to type." }),
+      /* @__PURE__ */ jsx("h3", { className: "font-headline-md text-headline-md uppercase", children: f.id ? "Edit Job" : "Add a Job" }),
+      /* @__PURE__ */ jsx("p", { className: "text-on-surface-variant text-sm", children: "These show up in the crew's job dropdown, and the address auto-fills for them at clock-out." }),
       /* @__PURE__ */ jsxs("div", { children: [
         /* @__PURE__ */ jsx("label", { className: label, children: "Job Name" }),
-        /* @__PURE__ */ jsx("input", { className: input, value: name, onChange: (e) => setName(e.target.value), placeholder: "e.g. 123 Main St — Driveway" })
+        /* @__PURE__ */ jsx("input", { className: input, value: f.name, onChange: (e) => setF({ ...f, name: e.target.value }), placeholder: "e.g. 123 Main St — Driveway" })
+      ] }),
+      /* @__PURE__ */ jsxs("div", { children: [
+        /* @__PURE__ */ jsx("label", { className: label, children: "Job Site Address" }),
+        /* @__PURE__ */ jsx("input", { className: input, value: f.address, onChange: (e) => setF({ ...f, address: e.target.value }), placeholder: "123 Main St, Wadsworth, OH" })
       ] }),
       err && /* @__PURE__ */ jsx("p", { className: "text-error text-sm font-label-bold", children: err }),
-      /* @__PURE__ */ jsx("button", { className: btn, children: "Add Job" })
+      /* @__PURE__ */ jsxs("div", { className: "flex gap-3", children: [
+        /* @__PURE__ */ jsx("button", { className: btn, children: f.id ? "Save Changes" : "Add Job" }),
+        f.id && /* @__PURE__ */ jsx("button", { type: "button", className: btnGhost, onClick: () => setF(blank), children: "Cancel" })
+      ] })
     ] }),
     /* @__PURE__ */ jsxs("div", { className: "space-y-3", children: [
       jobs.length === 0 && /* @__PURE__ */ jsx("p", { className: "text-on-surface-variant", children: "No jobs yet." }),
@@ -3064,10 +3106,16 @@ function JobsTab({ jobs, entries, post: post2, onChange }) {
         const s = stats.get(j.name);
         return /* @__PURE__ */ jsxs("div", { className: "bg-surface-container-lowest p-4 border-2 border-surface-container-highest", children: [
           /* @__PURE__ */ jsxs("div", { className: "flex items-start justify-between gap-3", children: [
-            /* @__PURE__ */ jsx("span", { className: "font-label-bold", children: j.name }),
-            /* @__PURE__ */ jsx("button", { className: "text-on-surface-variant hover:text-error text-xs underline shrink-0", onClick: () => del(j.id), children: "Remove" })
+            /* @__PURE__ */ jsxs("div", { className: "min-w-0", children: [
+              /* @__PURE__ */ jsx("div", { className: "font-label-bold", children: j.name }),
+              j.address ? /* @__PURE__ */ jsx("div", { className: "text-on-surface-variant text-sm mt-0.5", children: j.address }) : /* @__PURE__ */ jsx("div", { className: "text-on-surface-variant/60 text-xs mt-0.5 italic", children: "No address saved" })
+            ] }),
+            /* @__PURE__ */ jsxs("div", { className: "flex gap-2 shrink-0", children: [
+              /* @__PURE__ */ jsx("button", { className: btnGhost, onClick: () => setF({ id: j.id, name: j.name, address: j.address || "" }), children: "Edit" }),
+              /* @__PURE__ */ jsx("button", { className: "text-on-surface-variant hover:text-error text-xs underline", onClick: () => del(j.id), children: "Remove" })
+            ] })
           ] }),
-          /* @__PURE__ */ jsxs("div", { className: "text-on-surface-variant text-sm mt-1", children: [
+          /* @__PURE__ */ jsxs("div", { className: "text-on-surface-variant text-sm mt-2", children: [
             /* @__PURE__ */ jsxs("span", { className: "text-primary font-label-bold", children: [
               (s?.hours || 0).toFixed(2),
               " man-hours"
