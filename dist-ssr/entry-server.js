@@ -2347,8 +2347,9 @@ function TimeClock() {
     }
   };
   const startManual = () => {
-    setClockIn("");
-    setClockOut("");
+    const t = nowTime();
+    setClockIn(t);
+    setClockOut(t);
     setLunch(30);
     setJobName("");
     setAddress("");
