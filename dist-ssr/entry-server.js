@@ -6,7 +6,7 @@ import { useTheme } from "next-themes";
 import { Toaster as Toaster$1 } from "sonner";
 import * as TooltipPrimitive from "@radix-ui/react-tooltip";
 import { clsx } from "clsx";
-import { Phone, MapPin, Hammer, AlertTriangle, RotateCcw, Menu, X, ArrowUpRight, Clock, ThumbsUp, Camera, Trees, Layers, Frame, Truck, HelpCircle, Zap, AlertCircle, Home as Home$1 } from "lucide-react";
+import { Phone, Hammer, AlertTriangle, RotateCcw, Menu, X, ArrowUpRight, MapPin, Clock, ThumbsUp, Camera, Trees, Layers, Frame, Truck, HelpCircle, Zap, AlertCircle, Home as Home$1 } from "lucide-react";
 import { twMerge } from "tailwind-merge";
 import { Slot } from "@radix-ui/react-slot";
 import { cva } from "class-variance-authority";
@@ -117,34 +117,17 @@ const BUSINESS = {
   // Services
   services: ["Landscaping", "Hardscaping", "Custom Composite Decks", "Concrete"]
 };
-const MAPS_HREF$1 = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
-  `${BUSINESS.serviceCity}, ${BUSINESS.address.regionFull}`
-)}`;
 function MobileActionBar() {
-  return /* @__PURE__ */ jsx("div", { className: "md:hidden fixed inset-x-3 bottom-3 z-40 print:hidden", role: "region", "aria-label": "Quick actions", children: /* @__PURE__ */ jsxs("div", { className: "flex items-stretch gap-2 rounded-2xl border border-white/10 bg-surface-container/85 backdrop-blur-xl p-2 shadow-[0_12px_40px_-8px_rgba(0,0,0,0.85)]", children: [
+  return /* @__PURE__ */ jsx("div", { className: "md:hidden fixed inset-x-3 bottom-3 z-40 print:hidden", role: "region", "aria-label": "Quick actions", children: /* @__PURE__ */ jsxs("div", { className: "flex items-stretch gap-2 rounded-2xl border border-white/15 bg-surface-container-high/95 backdrop-blur-xl p-2 ring-1 ring-inset ring-white/5 shadow-[0_18px_50px_-10px_rgba(0,0,0,0.9),0_0_30px_-10px_rgba(211,47,47,0.5)]", children: [
     /* @__PURE__ */ jsxs(
       "a",
       {
         href: BUSINESS.phoneHref,
         "aria-label": `Call ${BUSINESS.name}`,
-        className: "flex flex-1 flex-col items-center justify-center gap-1 rounded-xl border border-white/10 bg-white/5 py-2.5 text-on-surface active:scale-95 transition-transform",
+        className: "flex flex-1 flex-row items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.08] py-3.5 text-on-surface hover:bg-white/[0.12] active:scale-95 transition-all",
         children: [
-          /* @__PURE__ */ jsx(Phone, { size: 20, strokeWidth: 2, "aria-hidden": "true" }),
-          /* @__PURE__ */ jsx("span", { className: "font-label-bold text-[10px] uppercase tracking-wide", children: "Call" })
-        ]
-      }
-    ),
-    /* @__PURE__ */ jsxs(
-      "a",
-      {
-        href: MAPS_HREF$1,
-        target: "_blank",
-        rel: "noopener noreferrer",
-        "aria-label": "Get directions to our service area",
-        className: "flex flex-1 flex-col items-center justify-center gap-1 rounded-xl border border-white/10 bg-white/5 py-2.5 text-on-surface active:scale-95 transition-transform",
-        children: [
-          /* @__PURE__ */ jsx(MapPin, { size: 20, strokeWidth: 2, "aria-hidden": "true" }),
-          /* @__PURE__ */ jsx("span", { className: "font-label-bold text-[10px] uppercase tracking-wide", children: "Directions" })
+          /* @__PURE__ */ jsx(Phone, { size: 20, strokeWidth: 2, className: "text-primary", "aria-hidden": "true" }),
+          /* @__PURE__ */ jsx("span", { className: "font-label-bold text-[12px] uppercase tracking-wide", children: "Call" })
         ]
       }
     ),
@@ -153,10 +136,10 @@ function MobileActionBar() {
       {
         href: "/contact",
         "aria-label": "Request a free estimate",
-        className: "alm-sheen alm-glow-pulse relative overflow-hidden flex flex-[1.4] flex-col items-center justify-center gap-1 rounded-xl bg-primary-container text-on-primary-container py-2.5 metallic-gradient beveled-edge active:scale-95 transition-transform",
+        className: "alm-sheen-auto alm-glow-pulse relative overflow-hidden flex flex-[1.4] flex-row items-center justify-center gap-2 rounded-xl bg-primary-container text-on-primary-container py-3.5 metallic-gradient beveled-edge active:scale-95 transition-transform",
         children: [
           /* @__PURE__ */ jsx(Hammer, { size: 20, strokeWidth: 2, "aria-hidden": "true" }),
-          /* @__PURE__ */ jsx("span", { className: "font-label-bold text-[10px] uppercase tracking-wide", children: "Free Estimate" })
+          /* @__PURE__ */ jsx("span", { className: "font-label-bold text-[12px] uppercase tracking-wide", children: "Free Estimate" })
         ]
       }
     )
@@ -563,9 +546,6 @@ const LINKS = [
   { label: "Gallery", href: "/gallery" },
   { label: "Contact", href: "/contact" }
 ];
-const MAPS_HREF = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
-  `${BUSINESS.serviceCity}, ${BUSINESS.address.regionFull}`
-)}`;
 function Nav() {
   const [open, setOpen] = useState(false);
   const [location] = useLocation();
@@ -586,50 +566,52 @@ function Nav() {
     };
   }, [open]);
   const isActive = (href) => href === "/" ? location === "/" : location.startsWith(href);
-  return /* @__PURE__ */ jsxs("header", { className: "fixed top-0 w-full z-50 border-b-2 border-surface-container-highest bg-background/95 backdrop-blur-md shadow-[0_4px_0_0_rgba(0,0,0,0.5)]", children: [
-    /* @__PURE__ */ jsx(
-      "a",
-      {
-        href: "#main-content",
-        className: "sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-[60] focus:bg-primary-container focus:text-on-primary-container focus:px-4 focus:py-2 focus:font-label-bold focus:text-label-bold focus:uppercase",
-        children: "Skip to content"
-      }
-    ),
-    /* @__PURE__ */ jsxs("nav", { className: "flex justify-between items-center h-20 px-margin-mobile md:px-margin-desktop max-w-max-width mx-auto", children: [
-      /* @__PURE__ */ jsxs(Link, { href: "/", className: "flex items-center gap-3", children: [
-        /* @__PURE__ */ jsx(Img, { src: RC.logo, alt: "Randolph Construction", className: "h-12 w-12 object-contain" }),
-        /* @__PURE__ */ jsxs("span", { className: "font-display-lg text-2xl md:text-headline-md uppercase tracking-tight text-on-surface leading-none", children: [
-          "Randolph ",
-          /* @__PURE__ */ jsx("span", { className: "text-primary", children: "Construction" })
-        ] })
-      ] }),
-      /* @__PURE__ */ jsx("div", { className: "hidden md:flex items-center gap-8", children: LINKS.map((l) => /* @__PURE__ */ jsx(
-        Link,
-        {
-          href: l.href,
-          className: `font-label-bold text-label-bold uppercase transition-colors ${isActive(l.href) ? "text-primary" : "text-on-surface-variant hover:text-on-surface"}`,
-          children: l.label
-        },
-        l.href
-      )) }),
+  return /* @__PURE__ */ jsxs(Fragment, { children: [
+    /* @__PURE__ */ jsxs("header", { className: "fixed top-0 w-full z-50 border-b-2 border-surface-container-highest bg-background/95 backdrop-blur-md shadow-[0_4px_0_0_rgba(0,0,0,0.5)]", children: [
       /* @__PURE__ */ jsx(
-        Link,
+        "a",
         {
-          href: "/contact",
-          className: "hidden md:inline-block bg-primary-container text-on-primary-container font-label-bold text-label-bold uppercase px-6 py-3 metallic-gradient beveled-edge industrial-glow transition-all active:scale-95",
-          children: "Get an Estimate"
+          href: "#main-content",
+          className: "sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-[60] focus:bg-primary-container focus:text-on-primary-container focus:px-4 focus:py-2 focus:font-label-bold focus:text-label-bold focus:uppercase",
+          children: "Skip to content"
         }
       ),
-      /* @__PURE__ */ jsx(
-        "button",
-        {
-          className: "md:hidden text-on-surface p-1",
-          onClick: () => setOpen(true),
-          "aria-label": "Open menu",
-          "aria-expanded": open,
-          children: /* @__PURE__ */ jsx(Menu, { size: 26 })
-        }
-      )
+      /* @__PURE__ */ jsxs("nav", { className: "flex justify-between items-center h-20 px-margin-mobile md:px-margin-desktop max-w-max-width mx-auto", children: [
+        /* @__PURE__ */ jsxs(Link, { href: "/", className: "flex items-center gap-3", children: [
+          /* @__PURE__ */ jsx(Img, { src: RC.logo, alt: "Randolph Construction", className: "h-12 w-12 object-contain" }),
+          /* @__PURE__ */ jsxs("span", { className: "font-display-lg text-2xl md:text-headline-md uppercase tracking-tight text-on-surface leading-none", children: [
+            "Randolph ",
+            /* @__PURE__ */ jsx("span", { className: "text-primary", children: "Construction" })
+          ] })
+        ] }),
+        /* @__PURE__ */ jsx("div", { className: "hidden md:flex items-center gap-8", children: LINKS.map((l) => /* @__PURE__ */ jsx(
+          Link,
+          {
+            href: l.href,
+            className: `font-label-bold text-label-bold uppercase transition-colors ${isActive(l.href) ? "text-primary" : "text-on-surface-variant hover:text-on-surface"}`,
+            children: l.label
+          },
+          l.href
+        )) }),
+        /* @__PURE__ */ jsx(
+          Link,
+          {
+            href: "/contact",
+            className: "hidden md:inline-block bg-primary-container text-on-primary-container font-label-bold text-label-bold uppercase px-6 py-3 metallic-gradient beveled-edge industrial-glow transition-all active:scale-95",
+            children: "Get an Estimate"
+          }
+        ),
+        /* @__PURE__ */ jsx(
+          "button",
+          {
+            className: "md:hidden text-on-surface p-1",
+            onClick: () => setOpen(true),
+            "aria-label": "Open menu",
+            "aria-expanded": open,
+            children: /* @__PURE__ */ jsx(Menu, { size: 26 })
+          }
+        )
+      ] })
     ] }),
     /* @__PURE__ */ jsxs(
       "div",
@@ -720,7 +702,7 @@ function Nav() {
                     )
                   ] }),
                   /* @__PURE__ */ jsxs("div", { className: "px-6 py-7 mt-2 border-t border-surface-container-highest space-y-4", children: [
-                    /* @__PURE__ */ jsxs("a", { href: MAPS_HREF, target: "_blank", rel: "noopener noreferrer", className: "flex items-start gap-3 text-on-surface-variant hover:text-primary transition-colors", children: [
+                    /* @__PURE__ */ jsxs("div", { className: "flex items-start gap-3 text-on-surface-variant", children: [
                       /* @__PURE__ */ jsx(MapPin, { size: 18, className: "text-primary mt-0.5 shrink-0", "aria-hidden": "true" }),
                       /* @__PURE__ */ jsx("span", { className: "font-body-md text-sm", children: BUSINESS.serviceAreaCopy })
                     ] }),
