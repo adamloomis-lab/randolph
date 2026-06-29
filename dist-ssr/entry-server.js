@@ -2347,9 +2347,8 @@ function TimeClock() {
     }
   };
   const startManual = () => {
-    const t = nowTime();
-    setClockIn(t);
-    setClockOut(t);
+    setClockIn("08:00");
+    setClockOut("16:00");
     setLunch(30);
     setJobName("");
     setAddress("");
@@ -2643,7 +2642,7 @@ function TimeClockAdmin() {
         ] }),
         /* @__PURE__ */ jsx("button", { className: btnGhost, onClick: refresh, children: "Refresh" })
       ] }),
-      /* @__PURE__ */ jsx("div", { className: "flex flex-wrap gap-2 mb-8 border-b border-surface-container-highest", children: ["entries", "payroll", "crew", "jobs", "settings"].map((t) => /* @__PURE__ */ jsx(
+      /* @__PURE__ */ jsx("div", { className: "flex flex-wrap gap-2 mb-8 border-b border-surface-container-highest", children: ["entries", "payroll", "projects", "crew", "jobs", "settings"].map((t) => /* @__PURE__ */ jsx(
         "button",
         {
           onClick: () => setTab(t),
@@ -2654,6 +2653,7 @@ function TimeClockAdmin() {
       )) }),
       tab === "entries" && /* @__PURE__ */ jsx(EntriesTab, { entries, jobs, lockedThrough, post: post2, onChange: refresh }),
       tab === "payroll" && /* @__PURE__ */ jsx(PayrollTab, { entries, weekStartDay, lockedThrough, post: post2, onChange: refresh }),
+      tab === "projects" && /* @__PURE__ */ jsx(ProjectsTab, { jobs, entries, post: post2, onChange: refresh }),
       tab === "crew" && /* @__PURE__ */ jsx(CrewTab, { employees, post: post2, onChange: refresh }),
       tab === "jobs" && /* @__PURE__ */ jsx(JobsTab, { jobs, entries, post: post2, onChange: refresh }),
       tab === "settings" && /* @__PURE__ */ jsx(SettingsTab, { post: post2, weekStartDay, onChange: refresh })
@@ -3170,6 +3170,162 @@ function JobsTab({ jobs, entries, post: post2, onChange }) {
         ] }, j.id);
       }),
       /* @__PURE__ */ jsx("p", { className: "text-on-surface-variant/70 text-xs pt-1", children: "Labor shown is straight-time hours logged against each job, totaled across all time." })
+    ] })
+  ] });
+}
+const money = (n) => "$" + Math.round(n || 0).toLocaleString("en-US");
+function laborForJob(name, entries) {
+  let hours = 0, pay = 0;
+  for (const e of entries) {
+    if (e.jobName === name) {
+      hours += e.hours || 0;
+      pay += e.pay || 0;
+    }
+  }
+  return { hours, pay };
+}
+function ProjectsTab({ jobs, entries, post: post2, onChange }) {
+  const totals = useMemo(() => {
+    let revenue = 0, cost = 0, count = 0;
+    for (const j of jobs) {
+      const value = j.contractValue || 0;
+      if (value <= 0) continue;
+      const labor = laborForJob(j.name, entries).pay;
+      const mat = (j.materials || []).reduce((s, m) => s + (m.amount || 0), 0);
+      revenue += value;
+      cost += labor + mat;
+      count++;
+    }
+    const profit = revenue - cost;
+    return { revenue, cost, profit, margin: revenue > 0 ? profit / revenue * 100 : 0, count };
+  }, [jobs, entries]);
+  const sorted = useMemo(() => [...jobs].sort((a, b) => (b.contractValue || 0) - (a.contractValue || 0)), [jobs]);
+  const csv = () => {
+    const head = ["Project", "Status", "Contract Value", "Labor Hours", "Labor $", "Materials $", "Total Cost", "Profit", "Margin %"];
+    const rows = jobs.filter((j) => (j.contractValue || 0) > 0).map((j) => {
+      const l = laborForJob(j.name, entries);
+      const mat = (j.materials || []).reduce((s, m) => s + (m.amount || 0), 0);
+      const cost = l.pay + mat;
+      const value = j.contractValue || 0;
+      const profit = value - cost;
+      return [j.name, j.status || "active", value, l.hours.toFixed(2), Math.round(l.pay), Math.round(mat), Math.round(cost), Math.round(profit), (value > 0 ? profit / value * 100 : 0).toFixed(1)];
+    });
+    const esc = (v) => `"${String(v).replace(/"/g, '""')}"`;
+    const body = [head, ...rows].map((r) => r.map(esc).join(",")).join("\n");
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([body], { type: "text/csv" }));
+    a.download = "randolph-projects-pnl.csv";
+    a.click();
+  };
+  return /* @__PURE__ */ jsxs("div", { className: "space-y-8", children: [
+    /* @__PURE__ */ jsx("p", { className: "text-on-surface-variant text-sm max-w-2xl", children: "Your money side, private to you. Add the contract value and materials for a job and the labor pulls straight from the time clock. Profit and margin add up automatically, and every job stays on file so you can look back years later." }),
+    /* @__PURE__ */ jsxs("div", { className: "grid grid-cols-2 md:grid-cols-4 gap-4", children: [
+      /* @__PURE__ */ jsx(Stat, { label: `Revenue (${totals.count})`, value: money(totals.revenue) }),
+      /* @__PURE__ */ jsx(Stat, { label: "Total Cost", value: money(totals.cost) }),
+      /* @__PURE__ */ jsx(Stat, { label: "Profit", value: money(totals.profit) }),
+      /* @__PURE__ */ jsx(Stat, { label: "Avg Margin", value: `${totals.margin.toFixed(0)}%` })
+    ] }),
+    /* @__PURE__ */ jsx("div", { className: "flex justify-end", children: /* @__PURE__ */ jsx("button", { className: btn, onClick: csv, disabled: totals.count === 0, children: "Export P&L CSV" }) }),
+    /* @__PURE__ */ jsxs("div", { className: "space-y-4", children: [
+      jobs.length === 0 && /* @__PURE__ */ jsx("p", { className: "text-on-surface-variant", children: "No jobs yet. Add one under the Jobs tab first." }),
+      sorted.map((j) => /* @__PURE__ */ jsx(ProjectCard, { job: j, labor: laborForJob(j.name, entries), post: post2, onChange }, j.id))
+    ] })
+  ] });
+}
+function ProjectCard({ job, labor, post: post2, onChange }) {
+  const [value, setValue] = useState(job.contractValue ? String(job.contractValue) : "");
+  const [materials, setMaterials] = useState(job.materials?.length ? job.materials.map((m) => ({ ...m })) : []);
+  const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const matTotal = materials.reduce((s, m) => s + (Number(m.amount) || 0), 0);
+  const v = Number(value) || 0;
+  const cost = labor.pay + matTotal;
+  const profit = v - cost;
+  const margin = v > 0 ? profit / v * 100 : 0;
+  const addLine = () => setMaterials([...materials, { desc: "", amount: 0 }]);
+  const setLine = (i, patch) => setMaterials(materials.map((m, idx) => idx === i ? { ...m, ...patch } : m));
+  const rmLine = (i) => setMaterials(materials.filter((_, idx) => idx !== i));
+  const save = async () => {
+    setBusy(true);
+    try {
+      await post2({ action: "save-job", job: { id: job.id, contractValue: v, materials: materials.map((m) => ({ desc: m.desc, amount: Number(m.amount) || 0 })) } });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 1600);
+      onChange();
+    } finally {
+      setBusy(false);
+    }
+  };
+  const status = job.status || "active";
+  const mInput = "bg-surface-container border-b border-surface-container-highest p-2 text-on-surface focus:border-primary focus:outline-none w-full";
+  return /* @__PURE__ */ jsxs("div", { className: "bg-surface-container-lowest border-2 border-surface-container-highest", children: [
+    /* @__PURE__ */ jsxs("div", { className: "flex items-center justify-between gap-3 px-5 py-4 border-b border-surface-container-highest", children: [
+      /* @__PURE__ */ jsxs("div", { className: "font-headline-md text-headline-md uppercase", children: [
+        job.customer || job.name,
+        job.workType ? ` · ${job.workType}` : ""
+      ] }),
+      /* @__PURE__ */ jsx("span", { className: `text-[10px] font-label-bold uppercase tracking-wider px-2 py-0.5 ${JOB_STATUS_META[status].cls}`, children: JOB_STATUS_META[status].label })
+    ] }),
+    /* @__PURE__ */ jsxs("div", { className: "px-5 py-2", children: [
+      /* @__PURE__ */ jsxs("div", { className: "flex items-center justify-between gap-4 py-3 border-b border-surface-container-highest", children: [
+        /* @__PURE__ */ jsxs("label", { className: "text-on-surface", children: [
+          "Contract value ",
+          /* @__PURE__ */ jsx("span", { className: "text-on-surface-variant text-xs", children: "(approved estimate)" })
+        ] }),
+        /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-1 w-40", children: [
+          /* @__PURE__ */ jsx("span", { className: "text-on-surface-variant", children: "$" }),
+          /* @__PURE__ */ jsx("input", { className: mInput, inputMode: "decimal", value, onChange: (e) => setValue(e.target.value.replace(/[^0-9.]/g, "")), placeholder: "0" })
+        ] })
+      ] }),
+      /* @__PURE__ */ jsxs("div", { className: "flex items-center justify-between py-3 border-b border-surface-container-highest", children: [
+        /* @__PURE__ */ jsxs("span", { className: "text-on-surface", children: [
+          "Labor ",
+          /* @__PURE__ */ jsxs("span", { className: "text-primary text-xs", children: [
+            "· ",
+            labor.hours.toFixed(1),
+            " hrs, from the time clock"
+          ] })
+        ] }),
+        /* @__PURE__ */ jsx("span", { className: "font-label-bold", children: money(labor.pay) })
+      ] }),
+      /* @__PURE__ */ jsxs("div", { className: "py-3 border-b border-surface-container-highest", children: [
+        /* @__PURE__ */ jsxs("div", { className: "flex items-center justify-between mb-2", children: [
+          /* @__PURE__ */ jsxs("span", { className: "text-on-surface", children: [
+            "Materials ",
+            /* @__PURE__ */ jsx("span", { className: "text-on-surface-variant text-xs", children: "(itemized)" })
+          ] }),
+          /* @__PURE__ */ jsx("span", { className: "font-label-bold", children: money(matTotal) })
+        ] }),
+        /* @__PURE__ */ jsxs("div", { className: "space-y-2", children: [
+          materials.map((m, i) => /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-2", children: [
+            /* @__PURE__ */ jsx("input", { className: `${mInput} flex-1`, value: m.desc, onChange: (e) => setLine(i, { desc: e.target.value }), placeholder: "e.g. Block & stone" }),
+            /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-1 w-32", children: [
+              /* @__PURE__ */ jsx("span", { className: "text-on-surface-variant", children: "$" }),
+              /* @__PURE__ */ jsx("input", { className: mInput, inputMode: "decimal", value: m.amount || "", onChange: (e) => setLine(i, { amount: Number(e.target.value.replace(/[^0-9.]/g, "")) || 0 }), placeholder: "0" })
+            ] }),
+            /* @__PURE__ */ jsx("button", { type: "button", onClick: () => rmLine(i), className: "text-on-surface-variant hover:text-error text-sm px-1", "aria-label": "Remove line item", children: "✕" })
+          ] }, i)),
+          /* @__PURE__ */ jsx("button", { type: "button", onClick: addLine, className: "text-primary text-sm font-label-bold hover:underline", children: "+ Add line item" })
+        ] })
+      ] }),
+      /* @__PURE__ */ jsxs("div", { className: "flex items-center justify-between py-3", children: [
+        /* @__PURE__ */ jsxs("span", { className: "text-on-surface", children: [
+          "Total cost ",
+          /* @__PURE__ */ jsx("span", { className: "text-on-surface-variant text-xs", children: "(labor + materials)" })
+        ] }),
+        /* @__PURE__ */ jsx("span", { className: "font-label-bold", children: money(cost) })
+      ] })
+    ] }),
+    /* @__PURE__ */ jsxs("div", { className: "flex items-center justify-between gap-3 px-5 py-4 border-t border-surface-container-highest bg-[#15110f]", children: [
+      /* @__PURE__ */ jsxs("div", { children: [
+        /* @__PURE__ */ jsx("div", { className: "text-label-bold uppercase text-on-surface-variant text-[10px] tracking-widest", children: "Profit" }),
+        v > 0 ? /* @__PURE__ */ jsx("div", { className: `font-display-lg text-3xl ${profit >= 0 ? "text-[#5ec26a]" : "text-error"}`, children: money(profit) }) : /* @__PURE__ */ jsx("div", { className: "text-on-surface-variant text-sm pt-2", children: "Add a contract value" })
+      ] }),
+      /* @__PURE__ */ jsxs("div", { className: "text-right", children: [
+        /* @__PURE__ */ jsx("div", { className: "text-label-bold uppercase text-on-surface-variant text-[10px] tracking-widest", children: "Margin" }),
+        /* @__PURE__ */ jsx("div", { className: "font-display-lg text-3xl text-primary", children: v > 0 ? `${margin.toFixed(0)}%` : "" })
+      ] }),
+      /* @__PURE__ */ jsx("button", { className: btn, disabled: busy, onClick: save, children: busy ? "Saving…" : saved ? "Saved" : "Save" })
     ] })
   ] });
 }
