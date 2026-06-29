@@ -3,7 +3,7 @@ import Nav from "@/components/Nav";
 import Footer from "@/components/Footer";
 
 type Emp = { id: string; name: string; rate: number; pin: string; active?: boolean };
-type Job = { id: string; name: string; address?: string };
+type Job = { id: string; name: string; customer?: string; workType?: string; address?: string };
 type Entry = { id: string; employeeName: string; employeeId?: string; date: string; clockIn: string; clockOut: string; lunch: number | boolean; jobName: string; address: string; hours: number; rate: number; pay: number; createdAt?: string };
 
 // Lunch break options (minutes). Legacy entries stored a boolean (true = 30 min).
@@ -476,14 +476,16 @@ function CrewTab({ employees, post, onChange }: { employees: Emp[]; post: PostFn
 
 /* ---------------- Jobs (with man-hours / labor history) ---------------- */
 function JobsTab({ jobs, entries, post, onChange }: { jobs: Job[]; entries: Entry[]; post: PostFn; onChange: () => void }) {
-  const blank = { id: "", name: "", address: "" };
-  const [f, setF] = useState<{ id: string; name: string; address: string }>(blank);
+  const blank = { id: "", customer: "", workType: "", address: "" };
+  const [f, setF] = useState<{ id: string; customer: string; workType: string; address: string }>(blank);
   const [err, setErr] = useState("");
   const save = async (e: React.FormEvent) => {
     e.preventDefault(); setErr("");
-    try { await post({ action: "save-job", job: { id: f.id || undefined, name: f.name, address: f.address } }); setF(blank); onChange(); }
+    try { await post({ action: "save-job", job: { id: f.id || undefined, customer: f.customer, workType: f.workType, address: f.address } }); setF(blank); onChange(); }
     catch (e2) { setErr((e2 as Error).message); }
   };
+  // For older jobs saved before this split, drop the old name into Customer so it can be tidied up.
+  const editJob = (j: Job) => setF({ id: j.id, customer: j.customer || (j.workType ? "" : j.name || ""), workType: j.workType || "", address: j.address || "" });
   const del = async (id: string) => { if (confirm("Remove this job? Its logged hours stay in your records.")) { await post({ action: "delete-job", id }); if (f.id === id) setF(blank); onChange(); } };
 
   // Lifetime man-hours + straight-time labor cost per job name.
@@ -502,7 +504,8 @@ function JobsTab({ jobs, entries, post, onChange }: { jobs: Job[]; entries: Entr
       <form onSubmit={save} className="bg-surface-container-lowest p-6 border-2 border-surface-container-highest space-y-5 h-fit">
         <h3 className="font-headline-md text-headline-md uppercase">{f.id ? "Edit Job" : "Add a Job"}</h3>
         <p className="text-on-surface-variant text-sm">These show up in the crew's job dropdown, and the address auto-fills for them at clock-out.</p>
-        <div><label className={label}>Job Name</label><input className={input} value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="e.g. 123 Main St — Driveway" /></div>
+        <div><label className={label}>Customer</label><input className={input} value={f.customer} onChange={(e) => setF({ ...f, customer: e.target.value })} placeholder="e.g. Chick-fil-A or Mr. Smith" /></div>
+        <div><label className={label}>Type of Work</label><input className={input} value={f.workType} onChange={(e) => setF({ ...f, workType: e.target.value })} placeholder="e.g. Retaining Wall" /></div>
         <div><label className={label}>Job Site Address</label><input className={input} value={f.address} onChange={(e) => setF({ ...f, address: e.target.value })} placeholder="123 Main St, Wadsworth, OH" /></div>
         {err && <p className="text-error text-sm font-label-bold">{err}</p>}
         <div className="flex gap-3">
@@ -518,13 +521,14 @@ function JobsTab({ jobs, entries, post, onChange }: { jobs: Job[]; entries: Entr
             <div key={j.id} className="bg-surface-container-lowest p-4 border-2 border-surface-container-highest">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <div className="font-label-bold">{j.name}</div>
+                  <div className="font-label-bold">{j.customer || j.name}</div>
+                  {j.workType && <div className="text-on-surface-variant text-sm mt-0.5">{j.workType}</div>}
                   {j.address
                     ? <div className="text-on-surface-variant text-sm mt-0.5">{j.address}</div>
                     : <div className="text-on-surface-variant/60 text-xs mt-0.5 italic">No address saved</div>}
                 </div>
                 <div className="flex gap-2 shrink-0">
-                  <button className={btnGhost} onClick={() => setF({ id: j.id, name: j.name, address: j.address || "" })}>Edit</button>
+                  <button className={btnGhost} onClick={() => editJob(j)}>Edit</button>
                   <button className="text-on-surface-variant hover:text-error text-xs underline" onClick={() => del(j.id)}>Remove</button>
                 </div>
               </div>

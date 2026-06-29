@@ -18,7 +18,7 @@ async function seedIfEmpty(s) {
   let jobs = await getJSON(s, 'jobs', null)
   let settings = await getJSON(s, 'settings', null)
   if (!employees) { employees = [{ id: id(), name: 'Sample Crew', rate: 25, pin: '1234', active: true }]; await s.setJSON('employees', employees) }
-  if (!jobs) { jobs = [{ id: id(), name: '123 Main St — Driveway', address: '123 Main St, Wadsworth, OH' }, { id: id(), name: 'Smith Garage Floor', address: '' }]; await s.setJSON('jobs', jobs) }
+  if (!jobs) { jobs = [{ id: id(), customer: 'Sample Customer', workType: 'Driveway', name: 'Sample Customer · Driveway', address: '123 Main St, Wadsworth, OH' }]; await s.setJSON('jobs', jobs) }
   if (!settings) { settings = { adminPin: '1111', weekStartDay: 0, lockedThrough: null }; await s.setJSON('settings', settings) }
   return { employees, jobs, settings }
 }
@@ -164,8 +164,12 @@ export default async (req) => {
   }
   if (a === 'save-job') {
     const j = body.job || {}
-    if (!j.name) return bad('Job name required.')
-    const rec = { id: j.id || id(), name: j.name.trim(), address: (j.address || '').trim() }
+    const customer = (j.customer || '').trim()
+    const workType = (j.workType || '').trim()
+    // Display label used in the crew dropdown, entries, and reports.
+    const name = [customer, workType].filter(Boolean).join(' · ') || (j.name || '').trim()
+    if (!name) return bad('Add a customer (and the type of work).')
+    const rec = { id: j.id || id(), customer, workType, name, address: (j.address || '').trim() }
     const list = jobs.filter((x) => x.id !== rec.id); list.push(rec)
     await s.setJSON('jobs', list)
     return ok({ ok: true, jobs: list })

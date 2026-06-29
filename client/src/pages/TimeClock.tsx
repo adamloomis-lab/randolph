@@ -3,7 +3,7 @@ import Nav from "@/components/Nav";
 import Footer from "@/components/Footer";
 
 type Emp = { id: string; name: string };
-type Job = { id: string; name: string; address?: string };
+type Job = { id: string; name: string; customer?: string; workType?: string; address?: string };
 
 // Lunch break options (minutes deducted from the shift)
 const LUNCH_OPTIONS = [
