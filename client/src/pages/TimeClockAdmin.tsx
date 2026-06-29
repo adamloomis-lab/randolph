@@ -448,7 +448,7 @@ function CrewTab({ employees, post, onChange }: { employees: Emp[]; post: PostFn
       <div className="space-y-3">
         {employees.length === 0 && <p className="text-on-surface-variant">No crew yet. Add your first person.</p>}
         {employees.map((e) => {
-          const link = `${typeof window !== "undefined" ? window.location.origin : ""}/timeclock?u=${e.id}`;
+          const link = `${typeof window !== "undefined" ? window.location.origin : ""}/employee?u=${e.id}`;
           return (
             <div key={e.id} className="bg-surface-container-lowest p-4 border-2 border-surface-container-highest space-y-3">
               <div className="flex items-start justify-between gap-3">

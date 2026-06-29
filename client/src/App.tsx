@@ -30,6 +30,7 @@ function Router() {
       <Route path="/accessibility" component={Accessibility} />
       <Route path="/admin" component={TimeClockAdmin} />
       <Route path="/timeclock" component={TimeClock} />
+      <Route path="/employee" component={TimeClock} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>
@@ -39,7 +40,7 @@ function Router() {
 function GlobalCtas() {
   const [location] = useLocation();
   // Keep the crew time-clock + admin screens free of marketing CTAs.
-  if (location.startsWith("/timeclock") || location.startsWith("/admin")) return null;
+  if (location.startsWith("/timeclock") || location.startsWith("/employee") || location.startsWith("/admin")) return null;
   return (
     <>
       <MobileActionBar />

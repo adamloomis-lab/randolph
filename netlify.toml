@@ -16,6 +16,12 @@
   to = "/app-shell.html"
   status = 200
 
+# Memorable crew login URL (alias of /timeclock).
+[[redirects]]
+  from = "/employee"
+  to = "/app-shell.html"
+  status = 200
+
 [[redirects]]
   from = "/*"
   to = "/index.html"
