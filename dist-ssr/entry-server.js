@@ -2532,6 +2532,11 @@ function TimeClock() {
     /* @__PURE__ */ jsx(Footer, {})
   ] });
 }
+const JOB_STATUS_META = {
+  active: { label: "Active", cls: "bg-primary-container text-on-primary-container" },
+  future: { label: "Future", cls: "bg-surface-container-highest text-on-surface-variant" },
+  finished: { label: "Finished", cls: "bg-surface-container text-on-surface-variant/70" }
+};
 const LUNCH_OPTIONS = [
   { v: 0, label: "No lunch" },
   { v: 30, label: "30 min" },
@@ -3053,21 +3058,25 @@ function CrewTab({ employees, post: post2, onChange }) {
   ] });
 }
 function JobsTab({ jobs, entries, post: post2, onChange }) {
-  const blank = { id: "", customer: "", workType: "", address: "" };
+  const blank = { id: "", customer: "", workType: "", address: "", status: "active" };
   const [f, setF] = useState(blank);
   const [err, setErr] = useState("");
   const save = async (e) => {
     e.preventDefault();
     setErr("");
     try {
-      await post2({ action: "save-job", job: { id: f.id || void 0, customer: f.customer, workType: f.workType, address: f.address } });
+      await post2({ action: "save-job", job: { id: f.id || void 0, customer: f.customer, workType: f.workType, address: f.address, status: f.status } });
       setF(blank);
       onChange();
     } catch (e2) {
       setErr(e2.message);
     }
   };
-  const editJob = (j) => setF({ id: j.id, customer: j.customer || (j.workType ? "" : j.name || ""), workType: j.workType || "", address: j.address || "" });
+  const editJob = (j) => setF({ id: j.id, customer: j.customer || (j.workType ? "" : j.name || ""), workType: j.workType || "", address: j.address || "", status: j.status || "active" });
+  const setStatus = async (j, status) => {
+    await post2({ action: "save-job", job: { id: j.id, status } });
+    onChange();
+  };
   const del = async (id) => {
     if (confirm("Remove this job? Its logged hours stay in your records.")) {
       await post2({ action: "delete-job", id });
@@ -3075,6 +3084,8 @@ function JobsTab({ jobs, entries, post: post2, onChange }) {
       onChange();
     }
   };
+  const order = { active: 0, future: 1, finished: 2 };
+  const sortedJobs = [...jobs].sort((a, b) => order[a.status || "active"] - order[b.status || "active"]);
   const stats = useMemo(() => {
     const m = /* @__PURE__ */ new Map();
     for (const e of entries) {
@@ -3087,7 +3098,11 @@ function JobsTab({ jobs, entries, post: post2, onChange }) {
   return /* @__PURE__ */ jsxs("div", { className: "grid md:grid-cols-2 gap-8", children: [
     /* @__PURE__ */ jsxs("form", { onSubmit: save, className: "bg-surface-container-lowest p-6 border-2 border-surface-container-highest space-y-5 h-fit", children: [
       /* @__PURE__ */ jsx("h3", { className: "font-headline-md text-headline-md uppercase", children: f.id ? "Edit Job" : "Add a Job" }),
-      /* @__PURE__ */ jsx("p", { className: "text-on-surface-variant text-sm", children: "These show up in the crew's job dropdown, and the address auto-fills for them at clock-out." }),
+      /* @__PURE__ */ jsxs("p", { className: "text-on-surface-variant text-sm", children: [
+        "Only ",
+        /* @__PURE__ */ jsx("strong", { className: "text-primary", children: "Active" }),
+        " jobs show in the crew's dropdown. Future and Finished jobs are hidden from them, so their list stays short."
+      ] }),
       /* @__PURE__ */ jsxs("div", { children: [
         /* @__PURE__ */ jsx("label", { className: label, children: "Customer" }),
         /* @__PURE__ */ jsx("input", { className: input, value: f.customer, onChange: (e) => setF({ ...f, customer: e.target.value }), placeholder: "e.g. Chick-fil-A or Mr. Smith" })
@@ -3100,6 +3115,14 @@ function JobsTab({ jobs, entries, post: post2, onChange }) {
         /* @__PURE__ */ jsx("label", { className: label, children: "Job Site Address" }),
         /* @__PURE__ */ jsx("input", { className: input, value: f.address, onChange: (e) => setF({ ...f, address: e.target.value }), placeholder: "123 Main St, Wadsworth, OH" })
       ] }),
+      /* @__PURE__ */ jsxs("div", { children: [
+        /* @__PURE__ */ jsx("label", { className: label, children: "Status" }),
+        /* @__PURE__ */ jsxs("select", { className: input, value: f.status, onChange: (e) => setF({ ...f, status: e.target.value }), children: [
+          /* @__PURE__ */ jsx("option", { value: "active", children: "Active (crew can pick it)" }),
+          /* @__PURE__ */ jsx("option", { value: "future", children: "Future (hidden from crew)" }),
+          /* @__PURE__ */ jsx("option", { value: "finished", children: "Finished (hidden from crew)" })
+        ] })
+      ] }),
       err && /* @__PURE__ */ jsx("p", { className: "text-error text-sm font-label-bold", children: err }),
       /* @__PURE__ */ jsxs("div", { className: "flex gap-3", children: [
         /* @__PURE__ */ jsx("button", { className: btn, children: f.id ? "Save Changes" : "Add Job" }),
@@ -3108,18 +3131,30 @@ function JobsTab({ jobs, entries, post: post2, onChange }) {
     ] }),
     /* @__PURE__ */ jsxs("div", { className: "space-y-3", children: [
       jobs.length === 0 && /* @__PURE__ */ jsx("p", { className: "text-on-surface-variant", children: "No jobs yet." }),
-      jobs.map((j) => {
+      sortedJobs.map((j) => {
         const s = stats.get(j.name);
-        return /* @__PURE__ */ jsxs("div", { className: "bg-surface-container-lowest p-4 border-2 border-surface-container-highest", children: [
+        const status = j.status || "active";
+        return /* @__PURE__ */ jsxs("div", { className: `bg-surface-container-lowest p-4 border-2 border-surface-container-highest ${status !== "active" ? "opacity-75" : ""}`, children: [
           /* @__PURE__ */ jsxs("div", { className: "flex items-start justify-between gap-3", children: [
             /* @__PURE__ */ jsxs("div", { className: "min-w-0", children: [
-              /* @__PURE__ */ jsx("div", { className: "font-label-bold", children: j.customer || j.name }),
+              /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-2 flex-wrap", children: [
+                /* @__PURE__ */ jsx("span", { className: "font-label-bold", children: j.customer || j.name }),
+                /* @__PURE__ */ jsx("span", { className: `text-[10px] font-label-bold uppercase tracking-wider px-2 py-0.5 ${JOB_STATUS_META[status].cls}`, children: JOB_STATUS_META[status].label })
+              ] }),
               j.workType && /* @__PURE__ */ jsx("div", { className: "text-on-surface-variant text-sm mt-0.5", children: j.workType }),
               j.address ? /* @__PURE__ */ jsx("div", { className: "text-on-surface-variant text-sm mt-0.5", children: j.address }) : /* @__PURE__ */ jsx("div", { className: "text-on-surface-variant/60 text-xs mt-0.5 italic", children: "No address saved" })
             ] }),
             /* @__PURE__ */ jsxs("div", { className: "flex gap-2 shrink-0", children: [
               /* @__PURE__ */ jsx("button", { className: btnGhost, onClick: () => editJob(j), children: "Edit" }),
               /* @__PURE__ */ jsx("button", { className: "text-on-surface-variant hover:text-error text-xs underline", onClick: () => del(j.id), children: "Remove" })
+            ] })
+          ] }),
+          /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-2 mt-3", children: [
+            /* @__PURE__ */ jsx("label", { className: "text-on-surface-variant text-xs uppercase tracking-wider font-label-bold", children: "Status" }),
+            /* @__PURE__ */ jsxs("select", { className: "bg-surface-container border border-surface-container-highest text-on-surface text-sm px-2 py-1 focus:border-primary focus:outline-none", value: status, onChange: (e) => setStatus(j, e.target.value), children: [
+              /* @__PURE__ */ jsx("option", { value: "active", children: "Active" }),
+              /* @__PURE__ */ jsx("option", { value: "future", children: "Future" }),
+              /* @__PURE__ */ jsx("option", { value: "finished", children: "Finished" })
             ] })
           ] }),
           /* @__PURE__ */ jsxs("div", { className: "text-on-surface-variant text-sm mt-2", children: [
