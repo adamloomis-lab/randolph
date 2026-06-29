@@ -4,7 +4,8 @@ import Footer from "@/components/Footer";
 
 type Emp = { id: string; name: string; rate: number; pin: string; active?: boolean };
 type JobStatus = "active" | "future" | "finished";
-type Job = { id: string; name: string; customer?: string; workType?: string; address?: string; status?: JobStatus };
+type Material = { desc: string; amount: number };
+type Job = { id: string; name: string; customer?: string; workType?: string; address?: string; status?: JobStatus; contractValue?: number; materials?: Material[] };
 const JOB_STATUS_META: Record<JobStatus, { label: string; cls: string }> = {
   active: { label: "Active", cls: "bg-primary-container text-on-primary-container" },
   future: { label: "Future", cls: "bg-surface-container-highest text-on-surface-variant" },
@@ -40,7 +41,7 @@ export default function TimeClockAdmin() {
   const [authed, setAuthed] = useState(false);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
-  const [tab, setTab] = useState<"entries" | "payroll" | "crew" | "jobs" | "settings">("entries");
+  const [tab, setTab] = useState<"entries" | "payroll" | "projects" | "crew" | "jobs" | "settings">("entries");
 
   const [employees, setEmployees] = useState<Emp[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -106,7 +107,7 @@ export default function TimeClockAdmin() {
           </div>
 
           <div className="flex flex-wrap gap-2 mb-8 border-b border-surface-container-highest">
-            {(["entries", "payroll", "crew", "jobs", "settings"] as const).map((t) => (
+            {(["entries", "payroll", "projects", "crew", "jobs", "settings"] as const).map((t) => (
               <button key={t} onClick={() => setTab(t)}
                 className={`font-label-bold text-label-bold uppercase px-5 py-3 -mb-px border-b-2 transition-all ${tab === t ? "border-primary text-primary" : "border-transparent text-on-surface-variant hover:text-on-surface"}`}>
                 {t}
@@ -116,6 +117,7 @@ export default function TimeClockAdmin() {
 
           {tab === "entries" && <EntriesTab entries={entries} jobs={jobs} lockedThrough={lockedThrough} post={post} onChange={refresh} />}
           {tab === "payroll" && <PayrollTab entries={entries} weekStartDay={weekStartDay} lockedThrough={lockedThrough} post={post} onChange={refresh} />}
+          {tab === "projects" && <ProjectsTab jobs={jobs} entries={entries} post={post} onChange={refresh} />}
           {tab === "crew" && <CrewTab employees={employees} post={post} onChange={refresh} />}
           {tab === "jobs" && <JobsTab jobs={jobs} entries={entries} post={post} onChange={refresh} />}
           {tab === "settings" && <SettingsTab post={post} weekStartDay={weekStartDay} onChange={refresh} />}
@@ -571,6 +573,149 @@ function JobsTab({ jobs, entries, post, onChange }: { jobs: Job[]; entries: Entr
           );
         })}
         <p className="text-on-surface-variant/70 text-xs pt-1">Labor shown is straight-time hours logged against each job, totaled across all time.</p>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- Projects: profit & loss per job (admin only) ---------------- */
+const money = (n: number) => "$" + Math.round(n || 0).toLocaleString("en-US");
+function laborForJob(name: string, entries: Entry[]) {
+  let hours = 0, pay = 0;
+  for (const e of entries) { if (e.jobName === name) { hours += e.hours || 0; pay += e.pay || 0; } }
+  return { hours, pay };
+}
+
+function ProjectsTab({ jobs, entries, post, onChange }: { jobs: Job[]; entries: Entry[]; post: PostFn; onChange: () => void }) {
+  // Portfolio totals across jobs that have a contract value entered (real priced projects).
+  const totals = useMemo(() => {
+    let revenue = 0, cost = 0, count = 0;
+    for (const j of jobs) {
+      const value = j.contractValue || 0;
+      if (value <= 0) continue;
+      const labor = laborForJob(j.name, entries).pay;
+      const mat = (j.materials || []).reduce((s, m) => s + (m.amount || 0), 0);
+      revenue += value; cost += labor + mat; count++;
+    }
+    const profit = revenue - cost;
+    return { revenue, cost, profit, margin: revenue > 0 ? (profit / revenue) * 100 : 0, count };
+  }, [jobs, entries]);
+
+  const sorted = useMemo(() => [...jobs].sort((a, b) => (b.contractValue || 0) - (a.contractValue || 0)), [jobs]);
+
+  const csv = () => {
+    const head = ["Project", "Status", "Contract Value", "Labor Hours", "Labor $", "Materials $", "Total Cost", "Profit", "Margin %"];
+    const rows = jobs.filter((j) => (j.contractValue || 0) > 0).map((j) => {
+      const l = laborForJob(j.name, entries);
+      const mat = (j.materials || []).reduce((s, m) => s + (m.amount || 0), 0);
+      const cost = l.pay + mat; const value = j.contractValue || 0; const profit = value - cost;
+      return [j.name, j.status || "active", value, l.hours.toFixed(2), Math.round(l.pay), Math.round(mat), Math.round(cost), Math.round(profit), (value > 0 ? (profit / value) * 100 : 0).toFixed(1)];
+    });
+    const esc = (v: unknown) => `"${String(v).replace(/"/g, '""')}"`;
+    const body = [head, ...rows].map((r) => r.map(esc).join(",")).join("\n");
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([body], { type: "text/csv" }));
+    a.download = "randolph-projects-pnl.csv"; a.click();
+  };
+
+  return (
+    <div className="space-y-8">
+      <p className="text-on-surface-variant text-sm max-w-2xl">Your money side, private to you. Add the contract value and materials for a job and the labor pulls straight from the time clock. Profit and margin add up automatically, and every job stays on file so you can look back years later.</p>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <Stat label={`Revenue (${totals.count})`} value={money(totals.revenue)} />
+        <Stat label="Total Cost" value={money(totals.cost)} />
+        <Stat label="Profit" value={money(totals.profit)} />
+        <Stat label="Avg Margin" value={`${totals.margin.toFixed(0)}%`} />
+      </div>
+
+      <div className="flex justify-end">
+        <button className={btn} onClick={csv} disabled={totals.count === 0}>Export P&amp;L CSV</button>
+      </div>
+
+      <div className="space-y-4">
+        {jobs.length === 0 && <p className="text-on-surface-variant">No jobs yet. Add one under the Jobs tab first.</p>}
+        {sorted.map((j) => <ProjectCard key={j.id} job={j} labor={laborForJob(j.name, entries)} post={post} onChange={onChange} />)}
+      </div>
+    </div>
+  );
+}
+
+function ProjectCard({ job, labor, post, onChange }: { job: Job; labor: { hours: number; pay: number }; post: PostFn; onChange: () => void }) {
+  const [value, setValue] = useState(job.contractValue ? String(job.contractValue) : "");
+  const [materials, setMaterials] = useState<Material[]>(job.materials?.length ? job.materials.map((m) => ({ ...m })) : []);
+  const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  const matTotal = materials.reduce((s, m) => s + (Number(m.amount) || 0), 0);
+  const v = Number(value) || 0;
+  const cost = labor.pay + matTotal;
+  const profit = v - cost;
+  const margin = v > 0 ? (profit / v) * 100 : 0;
+
+  const addLine = () => setMaterials([...materials, { desc: "", amount: 0 }]);
+  const setLine = (i: number, patch: Partial<Material>) => setMaterials(materials.map((m, idx) => (idx === i ? { ...m, ...patch } : m)));
+  const rmLine = (i: number) => setMaterials(materials.filter((_, idx) => idx !== i));
+
+  const save = async () => {
+    setBusy(true);
+    try {
+      await post({ action: "save-job", job: { id: job.id, contractValue: v, materials: materials.map((m) => ({ desc: m.desc, amount: Number(m.amount) || 0 })) } });
+      setSaved(true); setTimeout(() => setSaved(false), 1600); onChange();
+    } finally { setBusy(false); }
+  };
+
+  const status = (job.status || "active") as JobStatus;
+  const mInput = "bg-surface-container border-b border-surface-container-highest p-2 text-on-surface focus:border-primary focus:outline-none w-full";
+
+  return (
+    <div className="bg-surface-container-lowest border-2 border-surface-container-highest">
+      <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-surface-container-highest">
+        <div className="font-headline-md text-headline-md uppercase">{job.customer || job.name}{job.workType ? ` · ${job.workType}` : ""}</div>
+        <span className={`text-[10px] font-label-bold uppercase tracking-wider px-2 py-0.5 ${JOB_STATUS_META[status].cls}`}>{JOB_STATUS_META[status].label}</span>
+      </div>
+
+      <div className="px-5 py-2">
+        <div className="flex items-center justify-between gap-4 py-3 border-b border-surface-container-highest">
+          <label className="text-on-surface">Contract value <span className="text-on-surface-variant text-xs">(approved estimate)</span></label>
+          <div className="flex items-center gap-1 w-40"><span className="text-on-surface-variant">$</span><input className={mInput} inputMode="decimal" value={value} onChange={(e) => setValue(e.target.value.replace(/[^0-9.]/g, ""))} placeholder="0" /></div>
+        </div>
+
+        <div className="flex items-center justify-between py-3 border-b border-surface-container-highest">
+          <span className="text-on-surface">Labor <span className="text-primary text-xs">· {labor.hours.toFixed(1)} hrs, from the time clock</span></span>
+          <span className="font-label-bold">{money(labor.pay)}</span>
+        </div>
+
+        <div className="py-3 border-b border-surface-container-highest">
+          <div className="flex items-center justify-between mb-2"><span className="text-on-surface">Materials <span className="text-on-surface-variant text-xs">(itemized)</span></span><span className="font-label-bold">{money(matTotal)}</span></div>
+          <div className="space-y-2">
+            {materials.map((m, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <input className={`${mInput} flex-1`} value={m.desc} onChange={(e) => setLine(i, { desc: e.target.value })} placeholder="e.g. Block & stone" />
+                <div className="flex items-center gap-1 w-32"><span className="text-on-surface-variant">$</span><input className={mInput} inputMode="decimal" value={m.amount || ""} onChange={(e) => setLine(i, { amount: Number(e.target.value.replace(/[^0-9.]/g, "")) || 0 })} placeholder="0" /></div>
+                <button type="button" onClick={() => rmLine(i)} className="text-on-surface-variant hover:text-error text-sm px-1" aria-label="Remove line item">✕</button>
+              </div>
+            ))}
+            <button type="button" onClick={addLine} className="text-primary text-sm font-label-bold hover:underline">+ Add line item</button>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between py-3">
+          <span className="text-on-surface">Total cost <span className="text-on-surface-variant text-xs">(labor + materials)</span></span>
+          <span className="font-label-bold">{money(cost)}</span>
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between gap-3 px-5 py-4 border-t border-surface-container-highest bg-[#15110f]">
+        <div>
+          <div className="text-label-bold uppercase text-on-surface-variant text-[10px] tracking-widest">Profit</div>
+          {v > 0 ? <div className={`font-display-lg text-3xl ${profit >= 0 ? "text-[#5ec26a]" : "text-error"}`}>{money(profit)}</div> : <div className="text-on-surface-variant text-sm pt-2">Add a contract value</div>}
+        </div>
+        <div className="text-right">
+          <div className="text-label-bold uppercase text-on-surface-variant text-[10px] tracking-widest">Margin</div>
+          <div className="font-display-lg text-3xl text-primary">{v > 0 ? `${margin.toFixed(0)}%` : ""}</div>
+        </div>
+        <button className={btn} disabled={busy} onClick={save}>{busy ? "Saving…" : saved ? "Saved" : "Save"}</button>
       </div>
     </div>
   );

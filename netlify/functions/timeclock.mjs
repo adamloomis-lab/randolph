@@ -87,8 +87,10 @@ export default async (req) => {
 
   // ---- Public / employee ----
   if (a === 'config') {
-    // Crew only see ACTIVE jobs (no status = active, for older jobs). Future/finished are hidden.
-    const activeJobs = jobs.filter((j) => (j.status || 'active') === 'active')
+    // Crew only see ACTIVE jobs, and ONLY the picker fields — never the financials (value/materials).
+    const activeJobs = jobs
+      .filter((j) => (j.status || 'active') === 'active')
+      .map((j) => ({ id: j.id, name: j.name, customer: j.customer, workType: j.workType, address: j.address }))
     return ok({ employees: employees.filter((e) => e.active !== false).map((e) => ({ id: e.id, name: e.name })), jobs: activeJobs })
   }
   if (['employee-login', 'submit', 'my-week', 'punch-status', 'punch-in', 'punch-cancel'].includes(a)) {
@@ -175,7 +177,12 @@ export default async (req) => {
     const name = [customer, workType].filter(Boolean).join(' · ') || (j.name ?? existing.name ?? '').trim()
     if (!name) return bad('Add a customer (and the type of work).')
     const status = JOB_STATUSES.includes(j.status) ? j.status : (existing.status || 'active')
-    const rec = { id: j.id || id(), customer, workType, name, address: (j.address ?? existing.address ?? '').trim(), status }
+    // Profitability fields (admin only; never sent to the crew via config).
+    const contractValue = j.contractValue !== undefined ? Math.max(0, Number(j.contractValue) || 0) : (existing.contractValue || 0)
+    const materials = Array.isArray(j.materials)
+      ? j.materials.map((m) => ({ desc: String(m.desc || '').trim(), amount: Math.max(0, Number(m.amount) || 0) })).filter((m) => m.desc || m.amount)
+      : (existing.materials || [])
+    const rec = { id: j.id || id(), customer, workType, name, address: (j.address ?? existing.address ?? '').trim(), status, contractValue, materials }
     const list = jobs.filter((x) => x.id !== rec.id); list.push(rec)
     await s.setJSON('jobs', list)
     return ok({ ok: true, jobs: list })
