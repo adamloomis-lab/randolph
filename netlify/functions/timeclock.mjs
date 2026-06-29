@@ -7,6 +7,7 @@ const store = () => getStore({ name: 'timeclock', consistency: 'strong' })
 const ok = (b) => new Response(JSON.stringify(b), { headers: { 'Content-Type': 'application/json' } })
 const bad = (msg, code = 400) => new Response(JSON.stringify({ error: msg }), { status: code, headers: { 'Content-Type': 'application/json' } })
 const id = () => Math.random().toString(36).slice(2, 10)
+const JOB_STATUSES = ['active', 'future', 'finished']
 
 async function getJSON(s, key, dflt) {
   const v = await s.get(key, { type: 'json' }).catch(() => null)
@@ -18,7 +19,7 @@ async function seedIfEmpty(s) {
   let jobs = await getJSON(s, 'jobs', null)
   let settings = await getJSON(s, 'settings', null)
   if (!employees) { employees = [{ id: id(), name: 'Sample Crew', rate: 25, pin: '1234', active: true }]; await s.setJSON('employees', employees) }
-  if (!jobs) { jobs = [{ id: id(), customer: 'Sample Customer', workType: 'Driveway', name: 'Sample Customer · Driveway', address: '123 Main St, Wadsworth, OH' }]; await s.setJSON('jobs', jobs) }
+  if (!jobs) { jobs = [{ id: id(), customer: 'Sample Customer', workType: 'Driveway', name: 'Sample Customer · Driveway', address: '123 Main St, Wadsworth, OH', status: 'active' }]; await s.setJSON('jobs', jobs) }
   if (!settings) { settings = { adminPin: '1111', weekStartDay: 0, lockedThrough: null }; await s.setJSON('settings', settings) }
   return { employees, jobs, settings }
 }
@@ -86,7 +87,9 @@ export default async (req) => {
 
   // ---- Public / employee ----
   if (a === 'config') {
-    return ok({ employees: employees.filter((e) => e.active !== false).map((e) => ({ id: e.id, name: e.name })), jobs })
+    // Crew only see ACTIVE jobs (no status = active, for older jobs). Future/finished are hidden.
+    const activeJobs = jobs.filter((j) => (j.status || 'active') === 'active')
+    return ok({ employees: employees.filter((e) => e.active !== false).map((e) => ({ id: e.id, name: e.name })), jobs: activeJobs })
   }
   if (['employee-login', 'submit', 'my-week', 'punch-status', 'punch-in', 'punch-cancel'].includes(a)) {
     const emp = employees.find((e) => e.id === body.employeeId)
@@ -164,12 +167,15 @@ export default async (req) => {
   }
   if (a === 'save-job') {
     const j = body.job || {}
-    const customer = (j.customer || '').trim()
-    const workType = (j.workType || '').trim()
+    // Merge with the existing record so a partial update (e.g. just a status change) keeps the rest.
+    const existing = jobs.find((x) => x.id === j.id) || {}
+    const customer = (j.customer ?? existing.customer ?? '').trim()
+    const workType = (j.workType ?? existing.workType ?? '').trim()
     // Display label used in the crew dropdown, entries, and reports.
-    const name = [customer, workType].filter(Boolean).join(' · ') || (j.name || '').trim()
+    const name = [customer, workType].filter(Boolean).join(' · ') || (j.name ?? existing.name ?? '').trim()
     if (!name) return bad('Add a customer (and the type of work).')
-    const rec = { id: j.id || id(), customer, workType, name, address: (j.address || '').trim() }
+    const status = JOB_STATUSES.includes(j.status) ? j.status : (existing.status || 'active')
+    const rec = { id: j.id || id(), customer, workType, name, address: (j.address ?? existing.address ?? '').trim(), status }
     const list = jobs.filter((x) => x.id !== rec.id); list.push(rec)
     await s.setJSON('jobs', list)
     return ok({ ok: true, jobs: list })

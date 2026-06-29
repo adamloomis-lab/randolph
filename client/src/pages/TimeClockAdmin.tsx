@@ -3,7 +3,13 @@ import Nav from "@/components/Nav";
 import Footer from "@/components/Footer";
 
 type Emp = { id: string; name: string; rate: number; pin: string; active?: boolean };
-type Job = { id: string; name: string; customer?: string; workType?: string; address?: string };
+type JobStatus = "active" | "future" | "finished";
+type Job = { id: string; name: string; customer?: string; workType?: string; address?: string; status?: JobStatus };
+const JOB_STATUS_META: Record<JobStatus, { label: string; cls: string }> = {
+  active: { label: "Active", cls: "bg-primary-container text-on-primary-container" },
+  future: { label: "Future", cls: "bg-surface-container-highest text-on-surface-variant" },
+  finished: { label: "Finished", cls: "bg-surface-container text-on-surface-variant/70" },
+};
 type Entry = { id: string; employeeName: string; employeeId?: string; date: string; clockIn: string; clockOut: string; lunch: number | boolean; jobName: string; address: string; hours: number; rate: number; pay: number; createdAt?: string };
 
 // Lunch break options (minutes). Legacy entries stored a boolean (true = 30 min).
@@ -476,17 +482,23 @@ function CrewTab({ employees, post, onChange }: { employees: Emp[]; post: PostFn
 
 /* ---------------- Jobs (with man-hours / labor history) ---------------- */
 function JobsTab({ jobs, entries, post, onChange }: { jobs: Job[]; entries: Entry[]; post: PostFn; onChange: () => void }) {
-  const blank = { id: "", customer: "", workType: "", address: "" };
-  const [f, setF] = useState<{ id: string; customer: string; workType: string; address: string }>(blank);
+  const blank = { id: "", customer: "", workType: "", address: "", status: "active" as JobStatus };
+  const [f, setF] = useState<{ id: string; customer: string; workType: string; address: string; status: JobStatus }>(blank);
   const [err, setErr] = useState("");
   const save = async (e: React.FormEvent) => {
     e.preventDefault(); setErr("");
-    try { await post({ action: "save-job", job: { id: f.id || undefined, customer: f.customer, workType: f.workType, address: f.address } }); setF(blank); onChange(); }
+    try { await post({ action: "save-job", job: { id: f.id || undefined, customer: f.customer, workType: f.workType, address: f.address, status: f.status } }); setF(blank); onChange(); }
     catch (e2) { setErr((e2 as Error).message); }
   };
   // For older jobs saved before this split, drop the old name into Customer so it can be tidied up.
-  const editJob = (j: Job) => setF({ id: j.id, customer: j.customer || (j.workType ? "" : j.name || ""), workType: j.workType || "", address: j.address || "" });
+  const editJob = (j: Job) => setF({ id: j.id, customer: j.customer || (j.workType ? "" : j.name || ""), workType: j.workType || "", address: j.address || "", status: j.status || "active" });
+  // Quick status change from the job card (merges server-side, so only status changes).
+  const setStatus = async (j: Job, status: JobStatus) => { await post({ action: "save-job", job: { id: j.id, status } }); onChange(); };
   const del = async (id: string) => { if (confirm("Remove this job? Its logged hours stay in your records.")) { await post({ action: "delete-job", id }); if (f.id === id) setF(blank); onChange(); } };
+
+  // Show Active first, then Future, then Finished.
+  const order: Record<JobStatus, number> = { active: 0, future: 1, finished: 2 };
+  const sortedJobs = [...jobs].sort((a, b) => order[a.status || "active"] - order[b.status || "active"]);
 
   // Lifetime man-hours + straight-time labor cost per job name.
   const stats = useMemo(() => {
@@ -503,10 +515,17 @@ function JobsTab({ jobs, entries, post, onChange }: { jobs: Job[]; entries: Entr
     <div className="grid md:grid-cols-2 gap-8">
       <form onSubmit={save} className="bg-surface-container-lowest p-6 border-2 border-surface-container-highest space-y-5 h-fit">
         <h3 className="font-headline-md text-headline-md uppercase">{f.id ? "Edit Job" : "Add a Job"}</h3>
-        <p className="text-on-surface-variant text-sm">These show up in the crew's job dropdown, and the address auto-fills for them at clock-out.</p>
+        <p className="text-on-surface-variant text-sm">Only <strong className="text-primary">Active</strong> jobs show in the crew's dropdown. Future and Finished jobs are hidden from them, so their list stays short.</p>
         <div><label className={label}>Customer</label><input className={input} value={f.customer} onChange={(e) => setF({ ...f, customer: e.target.value })} placeholder="e.g. Chick-fil-A or Mr. Smith" /></div>
         <div><label className={label}>Type of Work</label><input className={input} value={f.workType} onChange={(e) => setF({ ...f, workType: e.target.value })} placeholder="e.g. Retaining Wall" /></div>
         <div><label className={label}>Job Site Address</label><input className={input} value={f.address} onChange={(e) => setF({ ...f, address: e.target.value })} placeholder="123 Main St, Wadsworth, OH" /></div>
+        <div><label className={label}>Status</label>
+          <select className={input} value={f.status} onChange={(e) => setF({ ...f, status: e.target.value as JobStatus })}>
+            <option value="active">Active (crew can pick it)</option>
+            <option value="future">Future (hidden from crew)</option>
+            <option value="finished">Finished (hidden from crew)</option>
+          </select>
+        </div>
         {err && <p className="text-error text-sm font-label-bold">{err}</p>}
         <div className="flex gap-3">
           <button className={btn}>{f.id ? "Save Changes" : "Add Job"}</button>
@@ -515,13 +534,17 @@ function JobsTab({ jobs, entries, post, onChange }: { jobs: Job[]; entries: Entr
       </form>
       <div className="space-y-3">
         {jobs.length === 0 && <p className="text-on-surface-variant">No jobs yet.</p>}
-        {jobs.map((j) => {
+        {sortedJobs.map((j) => {
           const s = stats.get(j.name);
+          const status = (j.status || "active") as JobStatus;
           return (
-            <div key={j.id} className="bg-surface-container-lowest p-4 border-2 border-surface-container-highest">
+            <div key={j.id} className={`bg-surface-container-lowest p-4 border-2 border-surface-container-highest ${status !== "active" ? "opacity-75" : ""}`}>
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <div className="font-label-bold">{j.customer || j.name}</div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-label-bold">{j.customer || j.name}</span>
+                    <span className={`text-[10px] font-label-bold uppercase tracking-wider px-2 py-0.5 ${JOB_STATUS_META[status].cls}`}>{JOB_STATUS_META[status].label}</span>
+                  </div>
                   {j.workType && <div className="text-on-surface-variant text-sm mt-0.5">{j.workType}</div>}
                   {j.address
                     ? <div className="text-on-surface-variant text-sm mt-0.5">{j.address}</div>
@@ -531,6 +554,14 @@ function JobsTab({ jobs, entries, post, onChange }: { jobs: Job[]; entries: Entr
                   <button className={btnGhost} onClick={() => editJob(j)}>Edit</button>
                   <button className="text-on-surface-variant hover:text-error text-xs underline" onClick={() => del(j.id)}>Remove</button>
                 </div>
+              </div>
+              <div className="flex items-center gap-2 mt-3">
+                <label className="text-on-surface-variant text-xs uppercase tracking-wider font-label-bold">Status</label>
+                <select className="bg-surface-container border border-surface-container-highest text-on-surface text-sm px-2 py-1 focus:border-primary focus:outline-none" value={status} onChange={(e) => setStatus(j, e.target.value as JobStatus)}>
+                  <option value="active">Active</option>
+                  <option value="future">Future</option>
+                  <option value="finished">Finished</option>
+                </select>
               </div>
               <div className="text-on-surface-variant text-sm mt-2">
                 <span className="text-primary font-label-bold">{(s?.hours || 0).toFixed(2)} man-hours</span>
