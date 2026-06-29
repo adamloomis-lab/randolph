@@ -182,7 +182,12 @@ export default async (req) => {
     const materials = Array.isArray(j.materials)
       ? j.materials.map((m) => ({ desc: String(m.desc || '').trim(), amount: Math.max(0, Number(m.amount) || 0) })).filter((m) => m.desc || m.amount)
       : (existing.materials || [])
-    const rec = { id: j.id || id(), customer, workType, name, address: (j.address ?? existing.address ?? '').trim(), status, contractValue, materials }
+    // Bid estimate (entered at bid time) for the bid-vs-actual comparison.
+    const num = (val, fb) => (val !== undefined ? Math.max(0, Number(val) || 0) : fb)
+    const estHours = num(j.estHours, existing.estHours || 0)
+    const estLabor = num(j.estLabor, existing.estLabor || 0)
+    const estMaterials = num(j.estMaterials, existing.estMaterials || 0)
+    const rec = { id: j.id || id(), customer, workType, name, address: (j.address ?? existing.address ?? '').trim(), status, contractValue, materials, estHours, estLabor, estMaterials }
     const list = jobs.filter((x) => x.id !== rec.id); list.push(rec)
     await s.setJSON('jobs', list)
     return ok({ ok: true, jobs: list })

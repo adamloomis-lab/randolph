@@ -5,7 +5,7 @@ import Footer from "@/components/Footer";
 type Emp = { id: string; name: string; rate: number; pin: string; active?: boolean };
 type JobStatus = "active" | "future" | "finished";
 type Material = { desc: string; amount: number };
-type Job = { id: string; name: string; customer?: string; workType?: string; address?: string; status?: JobStatus; contractValue?: number; materials?: Material[] };
+type Job = { id: string; name: string; customer?: string; workType?: string; address?: string; status?: JobStatus; contractValue?: number; materials?: Material[]; estHours?: number; estLabor?: number; estMaterials?: number };
 const JOB_STATUS_META: Record<JobStatus, { label: string; cls: string }> = {
   active: { label: "Active", cls: "bg-primary-container text-on-primary-container" },
   future: { label: "Future", cls: "bg-surface-container-highest text-on-surface-variant" },
@@ -603,6 +603,22 @@ function ProjectsTab({ jobs, entries, post, onChange }: { jobs: Job[]; entries: 
 
   const sorted = useMemo(() => [...jobs].sort((a, b) => (b.contractValue || 0) - (a.contractValue || 0)), [jobs]);
 
+  // Profit rolled up by type of work (priced jobs only).
+  const byType = useMemo(() => {
+    const m = new Map<string, { count: number; revenue: number; cost: number }>();
+    for (const j of jobs) {
+      const value = j.contractValue || 0; if (value <= 0) continue;
+      const type = (j.workType || "Other").trim() || "Other";
+      const labor = laborForJob(j.name, entries).pay;
+      const mat = (j.materials || []).reduce((s, x) => s + (x.amount || 0), 0);
+      const c = m.get(type) || { count: 0, revenue: 0, cost: 0 };
+      c.count++; c.revenue += value; c.cost += labor + mat; m.set(type, c);
+    }
+    return Array.from(m.entries())
+      .map(([type, d]) => ({ type, count: d.count, revenue: d.revenue, profit: d.revenue - d.cost, margin: d.revenue > 0 ? ((d.revenue - d.cost) / d.revenue) * 100 : 0 }))
+      .sort((a, b) => b.margin - a.margin);
+  }, [jobs, entries]);
+
   const csv = () => {
     const head = ["Project", "Status", "Contract Value", "Labor Hours", "Labor $", "Materials $", "Total Cost", "Profit", "Margin %"];
     const rows = jobs.filter((j) => (j.contractValue || 0) > 0).map((j) => {
@@ -629,6 +645,31 @@ function ProjectsTab({ jobs, entries, post, onChange }: { jobs: Job[]; entries: 
         <Stat label="Avg Margin" value={`${totals.margin.toFixed(0)}%`} />
       </div>
 
+      {byType.length > 0 && (
+        <div className="border-2 border-surface-container-highest">
+          <div className="bg-surface-container px-4 py-3 font-label-bold text-label-bold uppercase text-on-surface-variant tracking-widest">Profit by Type of Work</div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="text-on-surface-variant uppercase text-xs tracking-wider">
+                <tr>{["Type of Work", "Jobs", "Revenue", "Profit", "Avg Margin"].map((h, i) => <th key={h} className={`p-3 font-label-bold ${i === 0 ? "text-left" : "text-right"}`}>{h}</th>)}</tr>
+              </thead>
+              <tbody>
+                {byType.map((r) => (
+                  <tr key={r.type} className="border-t border-surface-container-highest">
+                    <td className="p-3 font-label-bold">{r.type}</td>
+                    <td className="p-3 text-right">{r.count}</td>
+                    <td className="p-3 text-right">{money(r.revenue)}</td>
+                    <td className="p-3 text-right font-label-bold" style={{ color: r.profit >= 0 ? "#5ec26a" : undefined }}>{money(r.profit)}</td>
+                    <td className="p-3 text-right font-label-bold text-primary">{r.margin.toFixed(0)}%</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="text-on-surface-variant/70 text-xs p-3">Across all priced jobs. Shows which kind of work actually makes you money, so you know what to chase.</p>
+        </div>
+      )}
+
       <div className="flex justify-end">
         <button className={btn} onClick={csv} disabled={totals.count === 0}>Export P&amp;L CSV</button>
       </div>
@@ -644,6 +685,9 @@ function ProjectsTab({ jobs, entries, post, onChange }: { jobs: Job[]; entries: 
 function ProjectCard({ job, labor, post, onChange }: { job: Job; labor: { hours: number; pay: number }; post: PostFn; onChange: () => void }) {
   const [value, setValue] = useState(job.contractValue ? String(job.contractValue) : "");
   const [materials, setMaterials] = useState<Material[]>(job.materials?.length ? job.materials.map((m) => ({ ...m })) : []);
+  const [estH, setEstH] = useState(job.estHours ? String(job.estHours) : "");
+  const [estL, setEstL] = useState(job.estLabor ? String(job.estLabor) : "");
+  const [estM, setEstM] = useState(job.estMaterials ? String(job.estMaterials) : "");
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
 
@@ -652,6 +696,11 @@ function ProjectCard({ job, labor, post, onChange }: { job: Job; labor: { hours:
   const cost = labor.pay + matTotal;
   const profit = v - cost;
   const margin = v > 0 ? (profit / v) * 100 : 0;
+  // Bid estimate + comparison
+  const eH = Number(estH) || 0, eL = Number(estL) || 0, eM = Number(estM) || 0;
+  const estCost = eL + eM;
+  const estMargin = v > 0 ? ((v - estCost) / v) * 100 : 0;
+  const hasBid = eH > 0 || eL > 0 || eM > 0;
 
   const addLine = () => setMaterials([...materials, { desc: "", amount: 0 }]);
   const setLine = (i: number, patch: Partial<Material>) => setMaterials(materials.map((m, idx) => (idx === i ? { ...m, ...patch } : m)));
@@ -660,7 +709,7 @@ function ProjectCard({ job, labor, post, onChange }: { job: Job; labor: { hours:
   const save = async () => {
     setBusy(true);
     try {
-      await post({ action: "save-job", job: { id: job.id, contractValue: v, materials: materials.map((m) => ({ desc: m.desc, amount: Number(m.amount) || 0 })) } });
+      await post({ action: "save-job", job: { id: job.id, contractValue: v, materials: materials.map((m) => ({ desc: m.desc, amount: Number(m.amount) || 0 })), estHours: eH, estLabor: eL, estMaterials: eM } });
       setSaved(true); setTimeout(() => setSaved(false), 1600); onChange();
     } finally { setBusy(false); }
   };
@@ -679,6 +728,15 @@ function ProjectCard({ job, labor, post, onChange }: { job: Job; labor: { hours:
         <div className="flex items-center justify-between gap-4 py-3 border-b border-surface-container-highest">
           <label className="text-on-surface">Contract value <span className="text-on-surface-variant text-xs">(approved estimate)</span></label>
           <div className="flex items-center gap-1 w-40"><span className="text-on-surface-variant">$</span><input className={mInput} inputMode="decimal" value={value} onChange={(e) => setValue(e.target.value.replace(/[^0-9.]/g, ""))} placeholder="0" /></div>
+        </div>
+
+        <div className="py-3 border-b border-surface-container-highest">
+          <div className="text-on-surface mb-2">Your bid <span className="text-on-surface-variant text-xs">(what you estimated, optional)</span></div>
+          <div className="grid grid-cols-3 gap-2">
+            <div><div className="text-on-surface-variant text-xs mb-1">Est. hours</div><input className={mInput} inputMode="decimal" value={estH} onChange={(e) => setEstH(e.target.value.replace(/[^0-9.]/g, ""))} placeholder="0" /></div>
+            <div><div className="text-on-surface-variant text-xs mb-1">Est. labor $</div><input className={mInput} inputMode="decimal" value={estL} onChange={(e) => setEstL(e.target.value.replace(/[^0-9.]/g, ""))} placeholder="0" /></div>
+            <div><div className="text-on-surface-variant text-xs mb-1">Est. materials $</div><input className={mInput} inputMode="decimal" value={estM} onChange={(e) => setEstM(e.target.value.replace(/[^0-9.]/g, ""))} placeholder="0" /></div>
+          </div>
         </div>
 
         <div className="flex items-center justify-between py-3 border-b border-surface-container-highest">
@@ -704,6 +762,36 @@ function ProjectCard({ job, labor, post, onChange }: { job: Job; labor: { hours:
           <span className="text-on-surface">Total cost <span className="text-on-surface-variant text-xs">(labor + materials)</span></span>
           <span className="font-label-bold">{money(cost)}</span>
         </div>
+
+        {hasBid && (
+          <div className="mt-1 mb-3 border border-surface-container-highest text-sm">
+            <div className="grid grid-cols-4 bg-surface-container text-on-surface-variant text-[10px] uppercase tracking-wider">
+              <div className="p-2">Bid vs actual</div><div className="p-2 text-right">Bid</div><div className="p-2 text-right">Actual</div><div className="p-2 text-right">Off by</div>
+            </div>
+            {eH > 0 && (
+              <div className="grid grid-cols-4 border-t border-surface-container-highest">
+                <div className="p-2 text-on-surface-variant">Hours</div>
+                <div className="p-2 text-right">{eH.toFixed(0)}</div>
+                <div className="p-2 text-right text-on-surface">{labor.hours.toFixed(1)}</div>
+                <div className={`p-2 text-right font-label-bold ${labor.hours - eH > 0 ? "text-error" : "text-[#5ec26a]"}`}>{labor.hours - eH > 0 ? "+" : ""}{(labor.hours - eH).toFixed(1)} hrs</div>
+              </div>
+            )}
+            <div className="grid grid-cols-4 border-t border-surface-container-highest">
+              <div className="p-2 text-on-surface-variant">Cost</div>
+              <div className="p-2 text-right">{money(estCost)}</div>
+              <div className="p-2 text-right text-on-surface">{money(cost)}</div>
+              <div className={`p-2 text-right font-label-bold ${cost - estCost > 0 ? "text-error" : "text-[#5ec26a]"}`}>{cost - estCost >= 0 ? "+" : "-"}{money(Math.abs(cost - estCost))}</div>
+            </div>
+            {v > 0 && (
+              <div className="grid grid-cols-4 border-t border-surface-container-highest bg-[#15110f]">
+                <div className="p-2 text-on-surface font-label-bold">Margin</div>
+                <div className="p-2 text-right text-[#5ec26a]">{estMargin.toFixed(0)}%</div>
+                <div className="p-2 text-right font-label-bold text-primary">{margin.toFixed(0)}%</div>
+                <div className={`p-2 text-right font-label-bold ${margin - estMargin < 0 ? "text-error" : "text-[#5ec26a]"}`}>{margin - estMargin >= 0 ? "+" : ""}{(margin - estMargin).toFixed(0)} pts</div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="flex items-center justify-between gap-3 px-5 py-4 border-t border-surface-container-highest bg-[#15110f]">
