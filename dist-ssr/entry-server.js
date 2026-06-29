@@ -3052,20 +3052,21 @@ function CrewTab({ employees, post: post2, onChange }) {
   ] });
 }
 function JobsTab({ jobs, entries, post: post2, onChange }) {
-  const blank = { id: "", name: "", address: "" };
+  const blank = { id: "", customer: "", workType: "", address: "" };
   const [f, setF] = useState(blank);
   const [err, setErr] = useState("");
   const save = async (e) => {
     e.preventDefault();
     setErr("");
     try {
-      await post2({ action: "save-job", job: { id: f.id || void 0, name: f.name, address: f.address } });
+      await post2({ action: "save-job", job: { id: f.id || void 0, customer: f.customer, workType: f.workType, address: f.address } });
       setF(blank);
       onChange();
     } catch (e2) {
       setErr(e2.message);
     }
   };
+  const editJob = (j) => setF({ id: j.id, customer: j.customer || (j.workType ? "" : j.name || ""), workType: j.workType || "", address: j.address || "" });
   const del = async (id) => {
     if (confirm("Remove this job? Its logged hours stay in your records.")) {
       await post2({ action: "delete-job", id });
@@ -3087,8 +3088,12 @@ function JobsTab({ jobs, entries, post: post2, onChange }) {
       /* @__PURE__ */ jsx("h3", { className: "font-headline-md text-headline-md uppercase", children: f.id ? "Edit Job" : "Add a Job" }),
       /* @__PURE__ */ jsx("p", { className: "text-on-surface-variant text-sm", children: "These show up in the crew's job dropdown, and the address auto-fills for them at clock-out." }),
       /* @__PURE__ */ jsxs("div", { children: [
-        /* @__PURE__ */ jsx("label", { className: label, children: "Job Name" }),
-        /* @__PURE__ */ jsx("input", { className: input, value: f.name, onChange: (e) => setF({ ...f, name: e.target.value }), placeholder: "e.g. 123 Main St — Driveway" })
+        /* @__PURE__ */ jsx("label", { className: label, children: "Customer" }),
+        /* @__PURE__ */ jsx("input", { className: input, value: f.customer, onChange: (e) => setF({ ...f, customer: e.target.value }), placeholder: "e.g. Chick-fil-A or Mr. Smith" })
+      ] }),
+      /* @__PURE__ */ jsxs("div", { children: [
+        /* @__PURE__ */ jsx("label", { className: label, children: "Type of Work" }),
+        /* @__PURE__ */ jsx("input", { className: input, value: f.workType, onChange: (e) => setF({ ...f, workType: e.target.value }), placeholder: "e.g. Retaining Wall" })
       ] }),
       /* @__PURE__ */ jsxs("div", { children: [
         /* @__PURE__ */ jsx("label", { className: label, children: "Job Site Address" }),
@@ -3107,11 +3112,12 @@ function JobsTab({ jobs, entries, post: post2, onChange }) {
         return /* @__PURE__ */ jsxs("div", { className: "bg-surface-container-lowest p-4 border-2 border-surface-container-highest", children: [
           /* @__PURE__ */ jsxs("div", { className: "flex items-start justify-between gap-3", children: [
             /* @__PURE__ */ jsxs("div", { className: "min-w-0", children: [
-              /* @__PURE__ */ jsx("div", { className: "font-label-bold", children: j.name }),
+              /* @__PURE__ */ jsx("div", { className: "font-label-bold", children: j.customer || j.name }),
+              j.workType && /* @__PURE__ */ jsx("div", { className: "text-on-surface-variant text-sm mt-0.5", children: j.workType }),
               j.address ? /* @__PURE__ */ jsx("div", { className: "text-on-surface-variant text-sm mt-0.5", children: j.address }) : /* @__PURE__ */ jsx("div", { className: "text-on-surface-variant/60 text-xs mt-0.5 italic", children: "No address saved" })
             ] }),
             /* @__PURE__ */ jsxs("div", { className: "flex gap-2 shrink-0", children: [
-              /* @__PURE__ */ jsx("button", { className: btnGhost, onClick: () => setF({ id: j.id, name: j.name, address: j.address || "" }), children: "Edit" }),
+              /* @__PURE__ */ jsx("button", { className: btnGhost, onClick: () => editJob(j), children: "Edit" }),
               /* @__PURE__ */ jsx("button", { className: "text-on-surface-variant hover:text-error text-xs underline", onClick: () => del(j.id), children: "Remove" })
             ] })
           ] }),
