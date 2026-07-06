@@ -68,6 +68,19 @@ export const BUSINESS = {
   // Schema.org type
   schemaType: "GeneralContractor",
   priceRange: "$$",
+
+  // Partnerships
+  partners: [
+    {
+      name: "GardenReady",
+      relationship: "Preferred Installer Partner",
+      url: "https://gardenready.co",
+      logoWhite: "/images/randolph/gardenready-white.webp",
+    },
+  ],
+
+  // USDA hardiness zone (Wadsworth / Medina County, NE Ohio)
+  hardinessZone: "6a",
 };
 
 // Hour intervals formatted for schema.org `openingHoursSpecification` when filled in:

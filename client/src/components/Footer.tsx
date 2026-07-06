@@ -1,5 +1,6 @@
 import { Link } from "wouter";
 import Img from "@/components/Img";
+import GardenReadyBadge from "@/components/GardenReadyBadge";
 import { RC, COMPANY } from "@/lib/rc";
 // @ts-expect-error - plain JS module shared with the prerender script
 import { CITIES } from "@/lib/seoData.js";
@@ -37,6 +38,9 @@ export default function Footer() {
             >
               <span aria-hidden="true" className="material-symbols-outlined">photo_camera</span>
             </a>
+          </div>
+          <div className="mt-6">
+            <GardenReadyBadge variant="inline" />
           </div>
         </div>
 

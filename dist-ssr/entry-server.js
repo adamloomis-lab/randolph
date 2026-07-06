@@ -6,7 +6,7 @@ import { useTheme } from "next-themes";
 import { Toaster as Toaster$1 } from "sonner";
 import * as TooltipPrimitive from "@radix-ui/react-tooltip";
 import { clsx } from "clsx";
-import { Phone, Hammer, AlertTriangle, RotateCcw, Menu, X, ArrowUpRight, MapPin, Clock, ThumbsUp, Camera, Trees, Layers, Frame, Truck, HelpCircle, Zap, AlertCircle, Home as Home$1 } from "lucide-react";
+import { Phone, Hammer, AlertTriangle, RotateCcw, Menu, X, ArrowUpRight, MapPin, Clock, ThumbsUp, Camera, Sprout, CloudLightning, Snowflake, CloudRain, CloudDrizzle, CloudFog, Cloud, CloudSun, Sun, Trees, Layers, Frame, Truck, HelpCircle, Zap, AlertCircle, Home as Home$1 } from "lucide-react";
 import { twMerge } from "tailwind-merge";
 import { Slot } from "@radix-ui/react-slot";
 import { cva } from "class-variance-authority";
@@ -111,11 +111,27 @@ const BUSINESS = {
     region: "OH",
     regionFull: "Ohio"
   },
+  // Geo (approximate centroid of Wadsworth, OH)
+  geo: {
+    latitude: 41.0259,
+    longitude: -81.7298
+  },
   // Service area
   serviceCity: "Wadsworth",
   serviceAreaCopy: "Wadsworth, Medina, Norton, Barberton, and surrounding Northeast Ohio communities",
   // Services
-  services: ["Landscaping", "Hardscaping", "Custom Composite Decks", "Concrete"]
+  services: ["Landscaping", "Hardscaping", "Custom Composite Decks", "Concrete"],
+  // Partnerships
+  partners: [
+    {
+      name: "GardenReady",
+      relationship: "Preferred Installer Partner",
+      url: "https://gardenready.co",
+      logoWhite: "/images/randolph/gardenready-white.webp"
+    }
+  ],
+  // USDA hardiness zone (Wadsworth / Medina County, NE Ohio)
+  hardinessZone: "6a"
 };
 function MobileActionBar() {
   return /* @__PURE__ */ jsx("div", { className: "md:hidden fixed inset-x-3 bottom-3 z-40 print:hidden", role: "region", "aria-label": "Quick actions", children: /* @__PURE__ */ jsxs("div", { className: "flex items-stretch gap-2 rounded-2xl border border-white/15 bg-surface-container-high/95 backdrop-blur-xl p-2 ring-1 ring-inset ring-white/5 shadow-[0_18px_50px_-10px_rgba(0,0,0,0.9),0_0_30px_-10px_rgba(211,47,47,0.5)]", children: [
@@ -513,6 +529,14 @@ const IMG_META = {
   "/images/randolph/services-7.webp": {
     "width": 512,
     "height": 512
+  },
+  "/images/randolph/gardenready-white.webp": {
+    "width": 600,
+    "height": 115
+  },
+  "/images/randolph/gardenready-green.webp": {
+    "width": 600,
+    "height": 115
   }
 };
 function Img({ src, loading = "lazy", decoding = "async", ...rest }) {
@@ -744,6 +768,54 @@ function Nav() {
     )
   ] });
 }
+function GardenReadyBadge({ variant = "band" }) {
+  const partner = BUSINESS.partners.find((p) => p.name === "GardenReady");
+  if (!partner) return null;
+  if (variant === "inline") {
+    return /* @__PURE__ */ jsxs(
+      "a",
+      {
+        href: partner.url,
+        target: "_blank",
+        rel: "noopener noreferrer",
+        className: "inline-flex items-center gap-3 group",
+        "aria-label": `${partner.relationship} of GardenReady (opens in a new tab)`,
+        children: [
+          /* @__PURE__ */ jsxs("span", { className: "font-label-bold text-[11px] uppercase tracking-widest text-on-surface-variant group-hover:text-primary transition-colors", children: [
+            partner.relationship,
+            " of"
+          ] }),
+          /* @__PURE__ */ jsx(Img, { src: partner.logoWhite, alt: "GardenReady", loading: "eager", className: "h-4 w-auto opacity-80 group-hover:opacity-100 transition-opacity" })
+        ]
+      }
+    );
+  }
+  return /* @__PURE__ */ jsx("section", { className: "py-12 bg-background border-b border-surface-container-highest", children: /* @__PURE__ */ jsx("div", { className: "max-w-max-width mx-auto px-margin-mobile md:px-margin-desktop", children: /* @__PURE__ */ jsxs(
+    "a",
+    {
+      href: partner.url,
+      target: "_blank",
+      rel: "noopener noreferrer",
+      className: "flex flex-col sm:flex-row items-center justify-center gap-5 sm:gap-8 group",
+      "aria-label": `${partner.relationship} of GardenReady (opens in a new tab)`,
+      children: [
+        /* @__PURE__ */ jsxs("span", { className: "font-label-bold text-label-bold uppercase tracking-[0.25em] text-on-surface-variant text-center", children: [
+          partner.relationship,
+          " of"
+        ] }),
+        /* @__PURE__ */ jsx(
+          Img,
+          {
+            src: partner.logoWhite,
+            alt: "GardenReady",
+            loading: "eager",
+            className: "h-8 md:h-9 w-auto opacity-90 group-hover:opacity-100 transition-opacity"
+          }
+        )
+      ]
+    }
+  ) }) });
+}
 const SITE = {
   url: BUSINESS.url,
   name: BUSINESS.name,
@@ -861,7 +933,8 @@ function Footer() {
               children: /* @__PURE__ */ jsx("span", { "aria-hidden": "true", className: "material-symbols-outlined", children: "photo_camera" })
             }
           )
-        ] })
+        ] }),
+        /* @__PURE__ */ jsx("div", { className: "mt-6", children: /* @__PURE__ */ jsx(GardenReadyBadge, { variant: "inline" }) })
       ] }),
       /* @__PURE__ */ jsxs("div", { children: [
         /* @__PURE__ */ jsx("h5", { className: "font-label-bold text-label-bold uppercase text-on-surface mb-8 tracking-widest", children: "Navigation" }),
@@ -996,6 +1069,218 @@ function Reveal({ children, className = "", delay = 0 }) {
       children
     }
   );
+}
+function describe(code) {
+  if (code === 0) return { label: "Clear", icon: "clear" };
+  if (code === 1) return { label: "Mostly Sunny", icon: "clear" };
+  if (code === 2) return { label: "Partly Cloudy", icon: "partly" };
+  if (code === 3) return { label: "Cloudy", icon: "cloudy" };
+  if (code === 45 || code === 48) return { label: "Fog", icon: "fog" };
+  if (code >= 51 && code <= 57) return { label: "Drizzle", icon: "drizzle" };
+  if (code >= 61 && code <= 67) return { label: "Rain", icon: "rain" };
+  if (code >= 71 && code <= 77) return { label: "Snow", icon: "snow" };
+  if (code >= 80 && code <= 82) return { label: "Rain Showers", icon: "rain" };
+  if (code === 85 || code === 86) return { label: "Snow Showers", icon: "snow" };
+  if (code >= 95) return { label: "Thunderstorms", icon: "thunder" };
+  return { label: "Cloudy", icon: "cloudy" };
+}
+function weekday(iso) {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString("en-US", { weekday: "short" });
+}
+let shared = null;
+function getSharedWeather(lat, lon) {
+  shared ??= fetchWeather(lat, lon).catch(() => null);
+  return shared;
+}
+async function fetchWeather(lat, lon) {
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max&temperature_unit=fahrenheit&timezone=America/New_York&forecast_days=3`;
+  const res = await fetch(url, { cache: "no-store" });
+  if (!res.ok) throw new Error(`Open-Meteo ${res.status}`);
+  const data = await res.json();
+  const cur = data.current;
+  const daily = data.daily;
+  if (!cur || !daily?.time) return null;
+  const cd = describe(cur.weather_code ?? -1);
+  const current = {
+    temp: Math.round(cur.temperature_2m ?? 0),
+    label: cd.label,
+    icon: cd.icon
+  };
+  const days = daily.time.map((iso, i) => {
+    const d = describe(daily.weather_code?.[i] ?? -1);
+    return {
+      date: iso,
+      weekday: weekday(iso),
+      hi: Math.round(daily.temperature_2m_max?.[i] ?? 0),
+      lo: Math.round(daily.temperature_2m_min?.[i] ?? 0),
+      precip: Math.round(daily.precipitation_probability_max?.[i] ?? 0),
+      label: d.label,
+      icon: d.icon
+    };
+  });
+  return { current, days };
+}
+const SEASON_GUIDES = {
+  spring: {
+    key: "spring",
+    label: "Spring",
+    window: "March – May",
+    headline: "Spring is prime planting season in Northeast Ohio",
+    intro: "Once the soil warms and the last hard frost passes (usually mid-May around Wadsworth), it's the ideal window to establish perennials, trees, shrubs, and cool-season lawns before summer heat sets in.",
+    plants: [
+      { name: "Coneflower (Echinacea)", note: "Tough native perennial, pollinator magnet, thrives in zone 6a." },
+      { name: "Black-Eyed Susan (Rudbeckia)", note: "Hardy, long-blooming, low-maintenance color." },
+      { name: "Cool-season grass seed", note: "Fescue and Kentucky bluegrass establish best in spring's cool, moist soil." },
+      { name: "Hydrangea", note: "Plant now for big summer blooms; loves our climate." },
+      { name: "Pansies & snapdragons", note: "Cold-hardy annuals for instant early-season color." }
+    ],
+    tie: "Spring is the busiest window for new landscape beds, fresh sod, and lawn renovation. Book early — the calendar fills fast."
+  },
+  summer: {
+    key: "summer",
+    label: "Summer",
+    window: "June – August",
+    headline: "Keep your landscape thriving through the heat",
+    intro: "Summer is about maintaining established plantings and choosing heat-tolerant varieties. New sod and seed struggle in the heat, so summer is the perfect time to plan hardscaping and outdoor living projects that make your yard usable all season.",
+    plants: [
+      { name: "Russian Sage", note: "Drought-tolerant, silvery blue blooms that shrug off July heat." },
+      { name: "Coreopsis", note: "Sun-loving, cheerful, and blooms all summer with little water." },
+      { name: "Ornamental grasses", note: "Add movement and texture; virtually maintenance-free once established." },
+      { name: "Daylilies", note: "Nearly indestructible color that handles heat and dry spells." },
+      { name: "Petunias & marigolds", note: "Reliable annuals for containers and borders in full sun." }
+    ],
+    tie: "Too hot for new lawns? It's the ideal time to build the patio, fire pit, or retaining wall you'll enjoy this fall."
+  },
+  fall: {
+    key: "fall",
+    label: "Fall",
+    window: "September – November",
+    headline: "Fall is the best-kept secret for planting",
+    intro: "Cool air and warm soil make autumn the single best time to plant trees, shrubs, and perennials in Northeast Ohio — roots establish through fall and winter for a head start next spring. It's also the top window to lay sod and overseed tired lawns.",
+    plants: [
+      { name: "Trees & shrubs", note: "Cool soil means strong root growth before winter dormancy. Best planting window of the year." },
+      { name: "Spring bulbs", note: "Tulips, daffodils, and crocus go in now for an early-spring show." },
+      { name: "Mums & ornamental kale", note: "Classic fall color that handles the first frosts." },
+      { name: "Sod & overseeding", note: "Cool, moist conditions give new turf its best possible start." },
+      { name: "Divide perennials", note: "Split and replant hostas, daylilies, and grasses to fill out beds." }
+    ],
+    tie: "Fall is the smartest time to install new landscaping and lay sod — and to get concrete and hardscaping done before the freeze."
+  },
+  winter: {
+    key: "winter",
+    label: "Winter",
+    window: "December – February",
+    headline: "Plan now, build now, plant come spring",
+    intro: "The ground is dormant, but winter is the right time to design next season's landscape and take on hardscaping — patios, walls, and fire pits go in year-round. Booking your spring landscaping now means you're first on the schedule when the ground thaws.",
+    plants: [
+      { name: "Evergreens (protect)", note: "Shield arborvitae and boxwood from salt spray and drying winter wind." },
+      { name: "Winterberry Holly", note: "Bare red berries add rare winter color to Ohio landscapes." },
+      { name: "Plan your beds", note: "Winter is for design — map out the perennials and trees you'll plant in spring." },
+      { name: "Hardscape projects", note: "Patios, retaining walls, and fire pits can be built through the off-season." },
+      { name: "Book spring work", note: "Reserve your spot now; spring landscaping calendars fill by March." }
+    ],
+    tie: "Winter is design-and-build season. Lock in your spring landscaping and let us handle hardscaping while the yard rests."
+  }
+};
+function seasonByMonth(date = /* @__PURE__ */ new Date()) {
+  const m = date.getMonth();
+  if (m >= 2 && m <= 4) return "spring";
+  if (m >= 5 && m <= 7) return "summer";
+  if (m >= 8 && m <= 10) return "fall";
+  return "winter";
+}
+function currentSeasonGuide(date = /* @__PURE__ */ new Date()) {
+  return SEASON_GUIDES[seasonByMonth(date)];
+}
+const ICONS = {
+  clear: Sun,
+  partly: CloudSun,
+  cloudy: Cloud,
+  fog: CloudFog,
+  drizzle: CloudDrizzle,
+  rain: CloudRain,
+  snow: Snowflake,
+  thunder: CloudLightning
+};
+function WeatherIconEl({ icon, className }) {
+  const C = ICONS[icon] || Cloud;
+  return /* @__PURE__ */ jsx(C, { className, "aria-hidden": "true" });
+}
+function WeatherPlanting() {
+  const guide = currentSeasonGuide();
+  const [weather, setWeather] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    getSharedWeather(BUSINESS.geo.latitude, BUSINESS.geo.longitude).then((w) => {
+      if (alive) setWeather(w);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+  return /* @__PURE__ */ jsx("section", { className: "py-24 md:py-32 bg-surface-container-lowest concrete-texture border-y-4 border-surface-container-highest", children: /* @__PURE__ */ jsxs("div", { className: "max-w-max-width mx-auto px-margin-mobile md:px-margin-desktop", children: [
+    /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-4 mb-4", children: [
+      /* @__PURE__ */ jsx("div", { className: "h-[2px] w-12 bg-primary" }),
+      /* @__PURE__ */ jsx("span", { className: "font-label-bold text-label-bold uppercase text-primary tracking-[0.2em]", children: "Wadsworth Right Now" })
+    ] }),
+    /* @__PURE__ */ jsx("h2", { className: "font-headline-lg text-4xl md:text-headline-lg uppercase mb-4 leading-none max-w-3xl", children: guide.headline }),
+    /* @__PURE__ */ jsx("p", { className: "font-body-lg text-body-lg text-on-surface-variant max-w-2xl mb-12", children: guide.intro }),
+    /* @__PURE__ */ jsxs("div", { className: "grid grid-cols-1 lg:grid-cols-12 gap-gutter items-start", children: [
+      weather && /* @__PURE__ */ jsxs("div", { className: "lg:col-span-4 bg-surface-container border-2 border-surface-container-highest bevel-stone p-6", children: [
+        /* @__PURE__ */ jsx("div", { className: "flex items-center justify-between mb-6", children: /* @__PURE__ */ jsxs("div", { children: [
+          /* @__PURE__ */ jsx("p", { className: "font-label-bold text-label-bold uppercase text-on-surface-variant mb-1", children: "Wadsworth, OH" }),
+          /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-3", children: [
+            /* @__PURE__ */ jsx(WeatherIconEl, { icon: weather.current.icon, className: "w-9 h-9 text-primary" }),
+            /* @__PURE__ */ jsxs("span", { className: "font-display-lg text-5xl leading-none text-on-surface", children: [
+              weather.current.temp,
+              "°"
+            ] })
+          ] }),
+          /* @__PURE__ */ jsx("p", { className: "font-body-md text-on-surface-variant mt-1", children: weather.current.label })
+        ] }) }),
+        /* @__PURE__ */ jsx("div", { className: "grid grid-cols-3 gap-2 border-t border-surface-container-highest pt-4", children: weather.days.map((d) => /* @__PURE__ */ jsxs("div", { className: "text-center", children: [
+          /* @__PURE__ */ jsx("p", { className: "font-label-bold text-[11px] uppercase text-on-surface-variant mb-1", children: d.weekday }),
+          /* @__PURE__ */ jsx(WeatherIconEl, { icon: d.icon, className: "w-6 h-6 mx-auto text-on-surface-variant" }),
+          /* @__PURE__ */ jsxs("p", { className: "font-body-md text-sm text-on-surface mt-1", children: [
+            d.hi,
+            "° ",
+            /* @__PURE__ */ jsxs("span", { className: "text-on-surface-variant", children: [
+              "/ ",
+              d.lo,
+              "°"
+            ] })
+          ] })
+        ] }, d.date)) })
+      ] }),
+      /* @__PURE__ */ jsxs("div", { className: weather ? "lg:col-span-8" : "lg:col-span-12", children: [
+        /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-3 mb-6", children: [
+          /* @__PURE__ */ jsx(Sprout, { className: "w-6 h-6 text-primary", "aria-hidden": "true" }),
+          /* @__PURE__ */ jsxs("h3", { className: "font-headline-md text-2xl md:text-headline-md uppercase", children: [
+            "What to Plant Now — ",
+            guide.label,
+            " in Zone ",
+            BUSINESS.hardinessZone
+          ] })
+        ] }),
+        /* @__PURE__ */ jsx("ul", { className: "grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8", children: guide.plants.map((p) => /* @__PURE__ */ jsxs("li", { className: "border-l-2 border-surface-container-highest pl-4 py-1", children: [
+          /* @__PURE__ */ jsx("p", { className: "font-title-lg text-title-lg text-on-surface", children: p.name }),
+          /* @__PURE__ */ jsx("p", { className: "font-body-md text-body-md text-on-surface-variant", children: p.note })
+        ] }, p.name)) }),
+        /* @__PURE__ */ jsxs("div", { className: "bg-surface-container border-l-4 border-primary p-6 flex flex-col sm:flex-row sm:items-center gap-6 justify-between", children: [
+          /* @__PURE__ */ jsx("p", { className: "font-body-lg text-body-lg text-on-surface", children: guide.tie }),
+          /* @__PURE__ */ jsx(
+            Link,
+            {
+              href: "/contact",
+              className: "shrink-0 text-center bg-primary-container text-on-primary-container font-label-bold text-label-bold uppercase px-8 py-4 metallic-gradient beveled-edge industrial-glow transition-all active:scale-95",
+              children: "Plan Your Project"
+            }
+          )
+        ] })
+      ] })
+    ] })
+  ] }) });
 }
 const CDN = "/images";
 const IMG = {
@@ -1381,6 +1666,8 @@ function Home() {
           /* @__PURE__ */ jsx("div", { className: "mt-16 text-center", children: /* @__PURE__ */ jsx(Link, { href: "/gallery", className: "inline-block border-2 border-surface-container-highest hover:border-primary text-on-surface font-label-bold text-label-bold uppercase px-10 py-4 transition-colors", children: "View the Full Gallery" }) })
         ] })
       ] }) }),
+      /* @__PURE__ */ jsx(GardenReadyBadge, { variant: "band" }),
+      /* @__PURE__ */ jsx(WeatherPlanting, {}),
       /* @__PURE__ */ jsxs("section", { className: "py-24 md:py-32 bg-background relative overflow-hidden", children: [
         /* @__PURE__ */ jsx("div", { className: "absolute inset-0 opacity-10 pointer-events-none", children: /* @__PURE__ */ jsx("div", { className: "grid grid-cols-12 h-full", children: Array.from({ length: 12 }).map((_, i) => /* @__PURE__ */ jsx("div", { className: "border-r border-surface-container-highest" }, i)) }) }),
         /* @__PURE__ */ jsxs("div", { className: "max-w-4xl mx-auto px-margin-mobile md:px-margin-desktop text-center relative z-10", children: [

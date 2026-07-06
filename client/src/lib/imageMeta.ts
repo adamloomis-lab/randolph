@@ -272,5 +272,13 @@ export const IMG_META: Record<string, { width: number; height: number }> = {
   "/images/randolph/services-7.webp": {
     "width": 512,
     "height": 512
+  },
+  "/images/randolph/gardenready-white.webp": {
+    "width": 600,
+    "height": 115
+  },
+  "/images/randolph/gardenready-green.webp": {
+    "width": 600,
+    "height": 115
   }
 };

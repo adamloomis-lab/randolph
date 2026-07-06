@@ -6,6 +6,8 @@ import { Link } from "wouter";
 import Nav from "@/components/Nav";
 import Footer from "@/components/Footer";
 import Reveal from "@/components/Reveal";
+import WeatherPlanting from "@/components/WeatherPlanting";
+import GardenReadyBadge from "@/components/GardenReadyBadge";
 import { RC } from "@/lib/rc";
 import { IMG } from "@/lib/images";
 import { useSeo } from "@/lib/useSeo";
@@ -267,6 +269,12 @@ export default function Home() {
           </Reveal>
         </div>
       </section>
+
+      {/* GardenReady partnership */}
+      <GardenReadyBadge variant="band" />
+
+      {/* Live weather + season-aware planting guide */}
+      <WeatherPlanting />
 
       {/* Final CTA + quick quote form */}
       <section className="py-24 md:py-32 bg-background relative overflow-hidden">
