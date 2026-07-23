@@ -1480,6 +1480,16 @@ const SERVICE_CARDS$1 = [
   { value: "Concrete Services", label: "Concrete", icon: Truck },
   { value: "Not Sure Yet", label: "Not Sure Yet", icon: HelpCircle }
 ];
+function readFormValues$1(formEl, state) {
+  const out = { "form-name": "contact", ...state };
+  const fd = new FormData(formEl);
+  for (const [k, v] of fd.entries()) {
+    if (k === "bot-field") continue;
+    const val = String(v);
+    if (val.trim() !== "") out[k] = val;
+  }
+  return out;
+}
 const encode$1 = (data) => Object.keys(data).map((k) => `${encodeURIComponent(k)}=${encodeURIComponent(data[k])}`).join("&");
 const VALUE_PROPS = [
   { icon: "construction", title: "Built on Hard Work, Not Hype", desc: "This business started with a single lawn and a stubborn mower. Today it's grown through grit, skill, and a reputation for showing up and doing the job right." },
@@ -1524,18 +1534,19 @@ function Home() {
   };
   const handleSubmit = async (e) => {
     e.preventDefault();
+    const formEl = e.currentTarget;
     setErrorMsg("");
     if (!form.name || !form.email) {
       setErrorMsg("Please add your name and email.");
       return;
     }
     setSubmitting(true);
-    const captured = form.name.trim().split(/\s+/)[0];
+    const captured = String(new FormData(formEl).get("name") || form.name).trim().split(/\s+/)[0];
     try {
       const res = await fetch("/", {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: encode$1({ "form-name": "contact", ...form })
+        body: encode$1(readFormValues$1(formEl, form))
       });
       if (!res.ok) throw new Error("Submission failed");
       setFirstName(captured);
@@ -2011,6 +2022,16 @@ function Gallery() {
     /* @__PURE__ */ jsx(Footer, {})
   ] });
 }
+function readFormValues(formEl, state) {
+  const out = { "form-name": "contact", ...state };
+  const fd = new FormData(formEl);
+  for (const [k, v] of fd.entries()) {
+    if (k === "bot-field") continue;
+    const val = String(v);
+    if (val.trim() !== "") out[k] = val;
+  }
+  return out;
+}
 const encode = (data) => Object.keys(data).map((k) => `${encodeURIComponent(k)}=${encodeURIComponent(data[k])}`).join("&");
 const SERVICE_CARDS = [
   { value: "Landscaping", label: "Landscaping", icon: Trees },
@@ -2034,18 +2055,19 @@ function Contact() {
   };
   const handleSubmit = async (e) => {
     e.preventDefault();
+    const formEl = e.currentTarget;
     setErrorMsg("");
     if (!form.name || !form.phone || !form.email) {
       setErrorMsg("Please fill in your name, phone, and email.");
       return;
     }
     setSubmitting(true);
-    const captured = form.name.trim().split(/\s+/)[0];
+    const captured = String(new FormData(formEl).get("name") || form.name).trim().split(/\s+/)[0];
     try {
       const res = await fetch("/", {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: encode({ "form-name": "contact", ...form })
+        body: encode(readFormValues(formEl, form))
       });
       if (!res.ok) throw new Error("Submission failed");
       setFirstName(captured);

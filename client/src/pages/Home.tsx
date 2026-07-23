@@ -24,6 +24,20 @@ const SERVICE_CARDS: IconCardOption[] = [
   { value: "Not Sure Yet", label: "Not Sure Yet", icon: HelpCircle },
 ];
 
+// Read the actual submitted values from the form DOM (what the user typed),
+// merging over React state. This is immune to controlled-state desync such as a
+// hydration mismatch, which previously let text fields submit blank.
+function readFormValues(formEl: HTMLFormElement, state: Record<string, string>) {
+  const out: Record<string, string> = { "form-name": "contact", ...state };
+  const fd = new FormData(formEl);
+  for (const [k, v] of fd.entries()) {
+    if (k === "bot-field") continue;
+    const val = String(v);
+    if (val.trim() !== "") out[k] = val;
+  }
+  return out;
+}
+
 const encode = (data: Record<string, string>) =>
   Object.keys(data)
     .map((k) => `${encodeURIComponent(k)}=${encodeURIComponent(data[k])}`)
@@ -78,20 +92,21 @@ export default function Home() {
     setForm({ ...form, [e.target.name]: e.target.value });
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    const formEl = e.currentTarget;
     setErrorMsg("");
     if (!form.name || !form.email) {
       setErrorMsg("Please add your name and email.");
       return;
     }
     setSubmitting(true);
-    const captured = form.name.trim().split(/\s+/)[0];
+    const captured = (String(new FormData(formEl).get("name") || form.name)).trim().split(/\s+/)[0];
     try {
       const res = await fetch("/", {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: encode({ "form-name": "contact", ...form }),
+        body: encode(readFormValues(formEl, form)),
       });
       if (!res.ok) throw new Error("Submission failed");
       setFirstName(captured);
