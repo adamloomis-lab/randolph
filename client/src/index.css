@@ -334,3 +334,27 @@
     animation: none;
   }
 }
+
+/* Time clock pay stubs: print on white paper, one person per sheet, nothing else on the page. */
+@media print {
+  body.printing-stubs {
+    background: #fff !important;
+  }
+  body.printing-stubs > *:not(.stub-sheet) {
+    display: none !important;
+  }
+  body.printing-stubs .stub-sheet {
+    position: static !important;
+    overflow: visible !important;
+  }
+  body.printing-stubs .stub-toolbar {
+    display: none !important;
+  }
+  body.printing-stubs .stub-page {
+    break-after: page;
+    padding-top: 0;
+  }
+  body.printing-stubs .stub-page:last-child {
+    break-after: auto;
+  }
+}

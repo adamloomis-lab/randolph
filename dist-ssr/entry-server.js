@@ -1,5 +1,5 @@
 import { jsx, jsxs, Fragment } from "react/jsx-runtime";
-import { useState, useEffect, Component, createContext, useRef, useMemo, StrictMode } from "react";
+import { useState, useEffect, Component, createContext, useRef, useMemo, useCallback, StrictMode } from "react";
 import { renderToString } from "react-dom/server";
 import { Link, useLocation, useRoute, Redirect, Switch, Route, Router as Router$1 } from "wouter";
 import { useTheme } from "next-themes";
@@ -8,6 +8,7 @@ import * as TooltipPrimitive from "@radix-ui/react-tooltip";
 import { clsx } from "clsx";
 import { Phone, Hammer, AlertTriangle, RotateCcw, Menu, X, ArrowUpRight, MapPin, Clock, ThumbsUp, Camera, Sprout, CloudLightning, Snowflake, CloudRain, CloudDrizzle, CloudFog, Cloud, CloudSun, Sun, Trees, Layers, Frame, Truck, HelpCircle, Zap, AlertCircle, Home as Home$1 } from "lucide-react";
 import { twMerge } from "tailwind-merge";
+import { createPortal } from "react-dom";
 import { Slot } from "@radix-ui/react-slot";
 import { cva } from "class-variance-authority";
 const Toaster = ({ ...props }) => {
@@ -2500,13 +2501,19 @@ const LUNCH_OPTIONS$1 = [
   { v: 90, label: "1.5 hours" }
 ];
 const API$1 = "/.netlify/functions/timeclock";
+class ApiError extends Error {
+  constructor(message, relogin) {
+    super(message);
+    this.relogin = relogin;
+  }
+}
 const post = async (body) => {
   const r = await fetch(API$1, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   const d = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(d.error || "Something went wrong.");
+  if (!r.ok) throw new ApiError(d.error || "Something went wrong.", d.relogin === true);
   return d;
 };
-const todayStr = () => {
+const todayStr$1 = () => {
   const d = /* @__PURE__ */ new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 };
@@ -2514,7 +2521,7 @@ const nowTime = () => {
   const d = /* @__PURE__ */ new Date();
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 };
-const fmtTime = (t) => {
+const fmtTime$1 = (t) => {
   if (!t) return "";
   const [h, m] = t.split(":").map(Number);
   return `${(h + 11) % 12 + 1}:${String(m).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`;
@@ -2530,27 +2537,38 @@ function calcHours(clockIn, clockOut, lunchMinutes) {
   mins -= Math.max(0, Number(lunchMinutes) || 0);
   return Math.max(0, Math.round(mins / 60 * 100) / 100);
 }
+const getLoc = () => new Promise((resolve) => {
+  if (typeof navigator === "undefined" || !("geolocation" in navigator)) return resolve({ locNote: "unavailable" });
+  navigator.geolocation.getCurrentPosition(
+    (p) => resolve({ loc: { lat: p.coords.latitude, lng: p.coords.longitude, acc: p.coords.accuracy } }),
+    (e) => resolve({ locNote: e.code === 1 ? "denied" : e.code === 3 ? "timeout" : "unavailable" }),
+    { enableHighAccuracy: true, timeout: 8e3, maximumAge: 6e4 }
+  );
+});
 const label$1 = "font-label-bold text-label-bold uppercase text-primary tracking-[0.2em] block mb-2";
 const input$1 = "bg-surface-container border-b border-surface-container-highest p-4 text-on-surface focus:border-primary focus:outline-none transition-all w-full text-lg";
 const btn$1 = "bg-primary-container text-on-primary-container font-label-bold text-label-bold uppercase px-6 py-4 metallic-gradient beveled-edge industrial-glow transition-all active:scale-95 disabled:opacity-50 w-full text-center";
 function TimeClock() {
   const [employees, setEmployees] = useState([]);
   const [jobs, setJobs] = useState([]);
+  const [locationStamp, setLocationStamp] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [empId, setEmpId] = useState("");
   const [pin, setPin] = useState("");
+  const [showPin, setShowPin] = useState(false);
+  const [token, setToken] = useState("");
   const [me, setMe] = useState(null);
   const [err, setErr] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [date, setDate] = useState(todayStr());
+  const [busy, setBusy] = useState("");
+  const [date, setDate] = useState(todayStr$1());
   const [clockIn, setClockIn] = useState("");
   const [clockOut, setClockOut] = useState("");
   const [lunch, setLunch] = useState(30);
-  const [jobName, setJobName] = useState("");
+  const [jobId, setJobId] = useState("");
   const [address, setAddress] = useState("");
-  const onJobChange = (name) => {
-    setJobName(name);
-    const j = jobs.find((x) => x.name === name);
+  const onJobChange = (id) => {
+    setJobId(id);
+    const j = jobs.find((x) => x.id === id);
     if (j) setAddress(j.address || "");
   };
   const [done, setDone] = useState(null);
@@ -2563,12 +2581,18 @@ function TimeClock() {
     post({ action: "config" }).then((d) => {
       setEmployees(d.employees || []);
       setJobs(d.jobs || []);
+      setLocationStamp(d.locationStamp === true);
       const u = new URLSearchParams(window.location.search).get("u");
-      setEmpId(u || localStorage.getItem("rc_tc_emp") || "");
+      let remembered = "";
+      try {
+        remembered = localStorage.getItem("rc_tc_emp") || "";
+      } catch {
+      }
+      setEmpId(u || remembered);
     }).catch(() => {
     }).finally(() => setLoaded(true));
   }, []);
-  const weekBanner = week && /* @__PURE__ */ jsxs("div", { className: "bg-surface-container border-l-4 border-primary p-4 text-left", children: [
+  const weekBanner = week && /* @__PURE__ */ jsxs("div", { className: "bg-surface-container border border-surface-container-highest p-4 text-left", children: [
     /* @__PURE__ */ jsx("div", { className: "text-label-bold uppercase text-on-surface-variant text-xs tracking-widest mb-1", children: "This week so far" }),
     /* @__PURE__ */ jsxs("div", { className: "font-display-lg text-2xl text-primary", children: [
       week.totalHours,
@@ -2584,53 +2608,91 @@ function TimeClock() {
   ] });
   const hours = calcHours(clockIn, clockOut, lunch);
   const pay = me ? Math.round(hours * me.rate * 100) / 100 : 0;
+  const resetEntry = () => {
+    setClockIn("");
+    setClockOut("");
+    setLunch(30);
+    setJobId("");
+    setAddress("");
+    setDate(todayStr$1());
+  };
+  const switchUser = () => {
+    setMe(null);
+    setToken("");
+    setPin("");
+    setShowPin(false);
+    setDone(null);
+    setOpenPunch(null);
+    setWeek(null);
+    setMode("home");
+    resetEntry();
+  };
+  const fail = (e) => {
+    const x = e;
+    if (x.relogin) switchUser();
+    setErr(x.message);
+  };
   const login = async (e) => {
     e.preventDefault();
     setErr("");
     if (!empId) return setErr("Pick your name.");
     if (!/^\d{4}$/.test(pin)) return setErr("Enter your 4-digit PIN.");
-    setBusy(true);
+    setBusy("Checking…");
     try {
       const d = await post({ action: "employee-login", employeeId: empId, pin });
       setMe(d.employee);
-      localStorage.setItem("rc_tc_emp", empId);
-      post({ action: "my-week", employeeId: empId, pin, date: todayStr() }).then((w) => setWeek(w.week)).catch(() => {
+      setToken(d.token);
+      setPin("");
+      try {
+        localStorage.setItem("rc_tc_emp", empId);
+      } catch {
+      }
+      post({ action: "my-week", token: d.token, date: todayStr$1() }).then((w) => setWeek(w.week)).catch(() => {
       });
-      post({ action: "punch-status", employeeId: empId, pin }).then((p) => setOpenPunch(p.open || null)).catch(() => {
+      post({ action: "punch-status", token: d.token }).then((p) => setOpenPunch(p.open || null)).catch(() => {
       });
     } catch (e2) {
       setErr(e2.message);
     } finally {
-      setBusy(false);
+      setBusy("");
     }
   };
   const submit = async (e) => {
     e.preventDefault();
     setErr("");
     if (!clockIn || !clockOut) return setErr("Enter your clock-in and clock-out times.");
-    setBusy(true);
     try {
-      const d = await post({ action: "submit", employeeId: me.id, pin, date, clockIn, clockOut, lunch, jobName, address });
+      let where = {};
+      if (locationStamp) {
+        setBusy("Finding your location…");
+        where = await getLoc();
+      }
+      setBusy("Saving…");
+      const d = await post({ action: "submit", token, date, clockIn, clockOut, lunch, jobId, address, ...where });
       if (d.week) setWeek(d.week);
       setOpenPunch(null);
       setDone({ hours: d.entry.hours, pay: d.entry.pay });
     } catch (e2) {
-      setErr(e2.message);
+      fail(e2);
     } finally {
-      setBusy(false);
+      setBusy("");
     }
   };
   const clockInNow = async () => {
     setErr("");
-    setBusy(true);
     try {
-      const t = nowTime(), d = todayStr();
-      await post({ action: "punch-in", employeeId: me.id, pin, date: d, time: t });
-      setOpenPunch({ date: d, clockIn: t });
+      let where = {};
+      if (locationStamp) {
+        setBusy("Finding your location…");
+        where = await getLoc();
+      }
+      setBusy("Clocking in…");
+      const d = await post({ action: "punch-in", token, ...where });
+      setOpenPunch(d.open);
     } catch (e2) {
-      setErr(e2.message);
+      fail(e2);
     } finally {
-      setBusy(false);
+      setBusy("");
     }
   };
   const clockOutNow = () => {
@@ -2639,54 +2701,41 @@ function TimeClock() {
     setClockIn(openPunch.clockIn);
     setClockOut(nowTime());
     setLunch(30);
-    setJobName("");
+    setJobId("");
     setAddress("");
     setMode("manual");
   };
   const cancelPunch = async () => {
     if (!confirm("Cancel your clock-in?")) return;
-    setBusy(true);
+    setBusy("…");
     try {
-      await post({ action: "punch-cancel", employeeId: me.id, pin });
+      await post({ action: "punch-cancel", token });
       setOpenPunch(null);
     } catch (e2) {
-      setErr(e2.message);
+      fail(e2);
     } finally {
-      setBusy(false);
+      setBusy("");
     }
   };
   const startManual = () => {
     setClockIn("08:00");
     setClockOut("16:00");
     setLunch(30);
-    setJobName("");
+    setJobId("");
     setAddress("");
-    setDate(todayStr());
+    setDate(todayStr$1());
     setMode("manual");
   };
   const logAnother = () => {
     setDone(null);
     setMode("home");
-    setClockIn("");
-    setClockOut("");
-    setLunch(30);
-    setJobName("");
-    setAddress("");
-    setDate(todayStr());
+    resetEntry();
   };
-  const switchUser = () => {
-    setMe(null);
-    setPin("");
-    setDone(null);
-    setOpenPunch(null);
-    setMode("home");
-    logAnother();
-  };
+  const locationNote = locationStamp && /* @__PURE__ */ jsx("p", { className: "text-on-surface-variant text-xs", children: "Your location is saved when you clock in and when you clock out. It is not followed during your shift." });
   return /* @__PURE__ */ jsxs("div", { className: "bg-background text-on-background font-body-md min-h-screen", children: [
     /* @__PURE__ */ jsx(Nav, {}),
     /* @__PURE__ */ jsx("main", { id: "main-content", className: "pt-32 pb-24", children: /* @__PURE__ */ jsxs("section", { className: "max-w-xl mx-auto px-margin-mobile md:px-margin-desktop", children: [
       /* @__PURE__ */ jsxs("div", { className: "mb-8", children: [
-        /* @__PURE__ */ jsx("span", { className: "font-label-bold text-label-bold uppercase text-primary tracking-[0.3em] block mb-3", children: "Crew Time Clock" }),
         /* @__PURE__ */ jsxs("h1", { className: "font-display-lg text-4xl md:text-5xl uppercase leading-none", children: [
           "Log Your ",
           /* @__PURE__ */ jsx("span", { className: "text-primary", children: "Hours" })
@@ -2705,23 +2754,36 @@ function TimeClock() {
           ] }),
           /* @__PURE__ */ jsxs("div", { children: [
             /* @__PURE__ */ jsx("label", { className: label$1, htmlFor: "pin", children: "4-Digit PIN" }),
-            /* @__PURE__ */ jsx(
-              "input",
-              {
-                id: "pin",
-                className: `${input$1} tracking-[0.5em]`,
-                type: "password",
-                inputMode: "numeric",
-                autoComplete: "off",
-                maxLength: 4,
-                value: pin,
-                onChange: (e) => setPin(e.target.value.replace(/\D/g, "")),
-                placeholder: "••••"
-              }
-            )
+            /* @__PURE__ */ jsxs("div", { className: "relative", children: [
+              /* @__PURE__ */ jsx(
+                "input",
+                {
+                  id: "pin",
+                  className: `${input$1} tracking-[0.5em] pr-20`,
+                  type: showPin ? "text" : "password",
+                  inputMode: "numeric",
+                  autoComplete: "off",
+                  maxLength: 4,
+                  value: pin,
+                  onChange: (e) => setPin(e.target.value.replace(/\D/g, "")),
+                  placeholder: "••••"
+                }
+              ),
+              /* @__PURE__ */ jsx(
+                "button",
+                {
+                  type: "button",
+                  onClick: () => setShowPin(!showPin),
+                  "aria-pressed": showPin,
+                  "aria-label": showPin ? "Hide PIN" : "Show PIN",
+                  className: "absolute right-0 top-0 h-full px-4 text-on-surface-variant hover:text-primary text-xs uppercase tracking-widest font-label-bold",
+                  children: showPin ? "Hide" : "Show"
+                }
+              )
+            ] })
           ] }),
-          err && /* @__PURE__ */ jsx("p", { className: "text-error text-sm font-label-bold", children: err }),
-          /* @__PURE__ */ jsx("button", { className: btn$1, disabled: busy, children: busy ? "Checking…" : "Continue" })
+          err && /* @__PURE__ */ jsx("p", { role: "alert", className: "text-error text-sm font-label-bold", children: err }),
+          /* @__PURE__ */ jsx("button", { className: btn$1, disabled: !!busy, children: busy || "Continue" })
         ] })
       ) : done ? (
         /* ---- Confirmation ---- */
@@ -2768,18 +2830,19 @@ function TimeClock() {
               /* @__PURE__ */ jsx("div", { className: "text-label-bold uppercase text-on-surface-variant text-xs tracking-widest", children: "You're on the clock" }),
               /* @__PURE__ */ jsxs("div", { className: "font-display-lg text-3xl text-primary mt-1", children: [
                 "In at ",
-                fmtTime(openPunch.clockIn)
+                fmtTime$1(openPunch.clockIn)
               ] }),
-              /* @__PURE__ */ jsx("div", { className: "text-on-surface-variant text-sm mt-1", children: openPunch.date === todayStr() ? "Today" : `Started ${openPunch.date}` })
+              /* @__PURE__ */ jsx("div", { className: "text-on-surface-variant text-sm mt-1", children: openPunch.date === todayStr$1() ? "Today" : `Started ${openPunch.date}` })
             ] }),
-            /* @__PURE__ */ jsx("button", { className: btn$1, disabled: busy, onClick: clockOutNow, children: "Clock Out Now" }),
-            /* @__PURE__ */ jsx("button", { className: "text-on-surface-variant text-xs underline", onClick: cancelPunch, disabled: busy, children: "Cancel clock-in" })
+            /* @__PURE__ */ jsx("button", { className: btn$1, disabled: !!busy, onClick: clockOutNow, children: "Clock Out Now" }),
+            /* @__PURE__ */ jsx("button", { className: "text-on-surface-variant text-xs underline", onClick: cancelPunch, disabled: !!busy, children: "Cancel clock-in" })
           ] }) : /* @__PURE__ */ jsxs("div", { className: "bg-surface-container-lowest p-8 border-2 border-surface-container-highest text-center space-y-4", children: [
             /* @__PURE__ */ jsx("p", { className: "text-on-surface-variant", children: "Tap to start your shift. It stamps the time for you." }),
-            /* @__PURE__ */ jsx("button", { className: btn$1, disabled: busy, onClick: clockInNow, children: busy ? "…" : "Clock In Now" }),
-            /* @__PURE__ */ jsx("button", { className: "text-on-surface-variant text-sm underline", onClick: startManual, children: "Or log a past shift by hand" })
+            /* @__PURE__ */ jsx("button", { className: btn$1, disabled: !!busy, onClick: clockInNow, children: busy || "Clock In Now" }),
+            /* @__PURE__ */ jsx("button", { className: "text-on-surface-variant text-sm underline", onClick: startManual, children: "Or log a past shift by hand" }),
+            locationNote
           ] }),
-          err && /* @__PURE__ */ jsx("p", { className: "text-error text-sm font-label-bold text-center", children: err })
+          err && /* @__PURE__ */ jsx("p", { role: "alert", className: "text-error text-sm font-label-bold text-center", children: err })
         ] })
       ) : (
         /* ---- Entry (manual or finishing a punch) ---- */
@@ -2794,7 +2857,7 @@ function TimeClock() {
           weekBanner,
           /* @__PURE__ */ jsxs("div", { children: [
             /* @__PURE__ */ jsx("label", { className: label$1, htmlFor: "date", children: "Date" }),
-            /* @__PURE__ */ jsx("input", { id: "date", type: "date", className: input$1, value: date, onChange: (e) => setDate(e.target.value) })
+            /* @__PURE__ */ jsx("input", { id: "date", type: "date", className: input$1, value: date, max: todayStr$1(), onChange: (e) => setDate(e.target.value) })
           ] }),
           /* @__PURE__ */ jsxs("div", { className: "grid grid-cols-2 gap-4", children: [
             /* @__PURE__ */ jsxs("div", { children: [
@@ -2813,9 +2876,9 @@ function TimeClock() {
           ] }),
           /* @__PURE__ */ jsxs("div", { children: [
             /* @__PURE__ */ jsx("label", { className: label$1, htmlFor: "job", children: "Job" }),
-            /* @__PURE__ */ jsxs("select", { id: "job", className: input$1, value: jobName, onChange: (e) => onJobChange(e.target.value), children: [
+            /* @__PURE__ */ jsxs("select", { id: "job", className: input$1, value: jobId, onChange: (e) => onJobChange(e.target.value), children: [
               /* @__PURE__ */ jsx("option", { value: "", children: "Select a job…" }),
-              jobs.map((j) => /* @__PURE__ */ jsx("option", { value: j.name, children: j.name }, j.id))
+              jobs.map((j) => /* @__PURE__ */ jsx("option", { value: j.id, children: j.name }, j.id))
             ] })
           ] }),
           /* @__PURE__ */ jsxs("div", { children: [
@@ -2823,7 +2886,7 @@ function TimeClock() {
             /* @__PURE__ */ jsx("input", { id: "addr", className: input$1, value: address, onChange: (e) => setAddress(e.target.value), placeholder: "Auto-fills when you pick a job" }),
             /* @__PURE__ */ jsx("p", { className: "text-on-surface-variant text-xs mt-1", children: "Picks up the saved address for the job. Edit it if you were somewhere else." })
           ] }),
-          /* @__PURE__ */ jsxs("div", { className: "flex justify-between items-center bg-surface-container p-4 border-l-4 border-primary", children: [
+          /* @__PURE__ */ jsxs("div", { className: "flex justify-between items-center bg-surface-container p-4 border border-surface-container-highest", children: [
             /* @__PURE__ */ jsx("span", { className: "font-label-bold text-label-bold uppercase text-on-surface-variant tracking-widest", children: "Today's Total" }),
             /* @__PURE__ */ jsxs("span", { className: "font-display-lg text-2xl text-primary", children: [
               hours,
@@ -2831,8 +2894,9 @@ function TimeClock() {
               pay.toFixed(2)
             ] })
           ] }),
-          err && /* @__PURE__ */ jsx("p", { className: "text-error text-sm font-label-bold", children: err }),
-          /* @__PURE__ */ jsx("button", { className: btn$1, disabled: busy, children: busy ? "Saving…" : "Submit Today's Hours" })
+          locationNote,
+          err && /* @__PURE__ */ jsx("p", { role: "alert", className: "text-error text-sm font-label-bold", children: err }),
+          /* @__PURE__ */ jsx("button", { className: btn$1, disabled: !!busy, children: busy || "Submit Today's Hours" })
         ] })
       ),
       /* @__PURE__ */ jsx("p", { className: "text-center text-on-surface-variant/70 text-xs mt-6", children: "Private to Randolph Construction." })
@@ -2840,11 +2904,15 @@ function TimeClock() {
     /* @__PURE__ */ jsx(Footer, {})
   ] });
 }
-const JOB_STATUS_META = {
-  active: { label: "Active", cls: "bg-primary-container text-on-primary-container" },
-  future: { label: "Future", cls: "bg-surface-container-highest text-on-surface-variant" },
-  finished: { label: "Finished", cls: "bg-surface-container text-on-surface-variant/70" }
-};
+const JOB_STATUS_LABEL = { active: "Active", future: "Future", finished: "Finished" };
+const label = "font-label-bold text-label-bold uppercase text-primary tracking-[0.2em] block mb-2";
+const input = "bg-surface-container border-b border-surface-container-highest p-3 text-on-surface focus:border-primary focus:outline-none transition-all w-full";
+const btn = "bg-primary-container text-on-primary-container font-label-bold text-label-bold uppercase px-5 py-3 metallic-gradient beveled-edge industrial-glow transition-all active:scale-95 disabled:opacity-50";
+const btnGhost = "border border-surface-container-highest text-on-surface-variant font-label-bold text-label-bold uppercase px-4 py-2 hover:text-primary hover:border-primary transition-all disabled:opacity-50";
+const textLink = "text-on-surface-variant hover:text-primary text-sm underline underline-offset-4 disabled:opacity-50";
+const hairline = "border-surface-container-highest";
+const errorText = "text-error text-sm font-label-bold";
+const okText = "text-primary text-sm font-label-bold";
 const LUNCH_OPTIONS = [
   { v: 0, label: "No lunch" },
   { v: 30, label: "30 min" },
@@ -2855,52 +2923,1726 @@ const LUNCH_OPTIONS = [
 const lunchToMins = (l) => l === true ? 30 : Math.max(0, Number(l) || 0);
 const lunchLabel = (l) => {
   const n = lunchToMins(l);
-  if (!n) return "None";
-  if (n % 60 === 0) return `${n / 60} hr`;
-  if (n > 60) return `${Math.floor(n / 60)} hr ${n % 60} min`;
-  return `${n} min`;
+  if (!n) return "no lunch";
+  if (n % 60 === 0) return `${n / 60} hr lunch`;
+  if (n > 60) return `${Math.floor(n / 60)} hr ${n % 60} min lunch`;
+  return `${n} min lunch`;
 };
+const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const r2 = (n) => Math.round(n * 100) / 100;
+const money = (n) => `$${(Number(n) || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const money0 = (n) => "$" + Math.round(n || 0).toLocaleString("en-US");
+const hrs = (n) => (Number(n) || 0).toLocaleString("en-US", { maximumFractionDigits: 2 });
+const utc = (iso) => /* @__PURE__ */ new Date(`${iso}T00:00:00Z`);
+const fmtDay = (iso) => utc(iso).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" });
+const fmtDate = (iso) => utc(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
+const fmtWeek = (iso) => utc(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+const fmtStamp = (iso) => new Date(iso).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+const fmtTime = (t) => {
+  if (!/^\d{2}:\d{2}$/.test(t || "")) return t || "";
+  const [h, m] = t.split(":").map(Number);
+  return `${(h + 11) % 12 + 1}:${String(m).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`;
+};
+const todayStr = () => {
+  const d = /* @__PURE__ */ new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
+function addDays(dateStr, n) {
+  const d = utc(dateStr);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+function weekStart(dateStr, startDay = 0) {
+  const d = utc(dateStr);
+  const off = (d.getUTCDay() - startDay + 7) % 7;
+  d.setUTCDate(d.getUTCDate() - off);
+  return d.toISOString().slice(0, 10);
+}
+const fmtPhone = (p) => {
+  const d = (p || "").replace(/\D/g, "").replace(/^1/, "");
+  return d.length === 10 ? `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}` : p;
+};
+const mapLink = (l) => `https://www.google.com/maps?q=${l.lat},${l.lng}`;
+const LOC_NOTE = {
+  denied: "location turned off on the phone",
+  timeout: "no signal for location",
+  unavailable: "location not available"
+};
+function computePayroll(entries, startDay = 0) {
+  const groups = /* @__PURE__ */ new Map();
+  for (const e of entries) {
+    const key = `${e.employeeId || e.employeeName}|${weekStart(e.date, startDay)}`;
+    const arr = groups.get(key) || [];
+    arr.push(e);
+    groups.set(key, arr);
+  }
+  const rows = [];
+  for (const [key, list] of Array.from(groups.entries())) {
+    const week = key.split("|")[1];
+    const shifts = [...list].sort((a, b) => (a.date + (a.createdAt || "")).localeCompare(b.date + (b.createdAt || "")));
+    let cum = 0, reg = 0, ot = 0, gross = 0;
+    const lines = /* @__PURE__ */ new Map();
+    const add = (kind, hours, rate) => {
+      if (hours <= 0) return;
+      const k = `${kind}|${rate}`;
+      const cur = lines.get(k) || { kind, hours: 0, rate, amount: 0 };
+      cur.hours += hours;
+      cur.amount += hours * rate;
+      lines.set(k, cur);
+    };
+    for (const e of shifts) {
+      const h = e.hours || 0;
+      const regPart = Math.min(h, Math.max(0, 40 - cum));
+      const otPart = h - regPart;
+      reg += regPart;
+      ot += otPart;
+      gross += regPart * e.rate + otPart * e.rate * 1.5;
+      cum += h;
+      add("Regular", regPart, e.rate);
+      add("Overtime", otPart, r2(e.rate * 1.5));
+    }
+    rows.push({
+      key,
+      employee: shifts[0].employeeName,
+      week,
+      reg: r2(reg),
+      ot: r2(ot),
+      total: r2(reg + ot),
+      gross: r2(gross),
+      shifts,
+      lines: Array.from(lines.values()).map((l) => ({ ...l, hours: r2(l.hours), amount: r2(l.amount) })).sort((a, b) => a.kind.localeCompare(b.kind) * -1 || a.rate - b.rate)
+    });
+  }
+  rows.sort((a, b) => b.week.localeCompare(a.week) || a.employee.localeCompare(b.employee));
+  return rows;
+}
+const entryIsForJob = (e, j) => e.jobId ? e.jobId === j.id : !!e.jobName && e.jobName === j.name;
+function laborForJob(job, entries) {
+  let hours = 0, pay = 0;
+  for (const e of entries) {
+    if (entryIsForJob(e, job)) {
+      hours += e.hours || 0;
+      pay += e.pay || 0;
+    }
+  }
+  return { hours, pay };
+}
+const csvText = (rows) => rows.map((r) => r.map((v) => `"${String(v ?? "").replace(/"/g, '""')}"`).join(",")).join("\r\n");
+function downloadFile(name, content, type = "text/csv") {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([content], { type }));
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2e3);
+}
+function SectionHead({ title, note, children }) {
+  return /* @__PURE__ */ jsxs("div", { className: `border-b ${hairline} pb-3 mb-4`, children: [
+    /* @__PURE__ */ jsxs("div", { className: "flex flex-wrap items-end justify-between gap-x-4 gap-y-2", children: [
+      /* @__PURE__ */ jsx("h3", { className: "font-headline-md text-headline-md uppercase", children: title }),
+      children && /* @__PURE__ */ jsx("div", { className: "flex flex-wrap items-center gap-3", children })
+    ] }),
+    note && /* @__PURE__ */ jsx("p", { className: "text-on-surface-variant text-sm mt-1 max-w-2xl", children: note })
+  ] });
+}
+function Counts({ items }) {
+  return /* @__PURE__ */ jsx("p", { className: "text-on-surface-variant text-lg leading-relaxed", children: items.map((it, i) => /* @__PURE__ */ jsxs("span", { children: [
+    /* @__PURE__ */ jsx("strong", { className: `font-label-bold ${it.tone === "good" ? "text-[#5ec26a]" : it.tone === "bad" ? "text-error" : "text-on-surface"}`, children: it.n }),
+    " ",
+    it.label,
+    i < items.length - 1 ? ", " : ""
+  ] }, it.label)) });
+}
+function PasscodeField({ id, value, onChange, placeholder, autoComplete }) {
+  const [show, setShow] = useState(false);
+  return /* @__PURE__ */ jsxs("div", { className: "relative", children: [
+    /* @__PURE__ */ jsx(
+      "input",
+      {
+        id,
+        className: `${input} pr-20`,
+        type: show ? "text" : "password",
+        autoComplete: autoComplete || "off",
+        autoCapitalize: "none",
+        spellCheck: false,
+        maxLength: 64,
+        value,
+        onChange: (e) => onChange(e.target.value),
+        placeholder
+      }
+    ),
+    /* @__PURE__ */ jsx(
+      "button",
+      {
+        type: "button",
+        onClick: () => setShow(!show),
+        "aria-pressed": show,
+        "aria-label": show ? "Hide passcode" : "Show passcode",
+        className: "absolute right-0 top-0 h-full px-4 text-on-surface-variant hover:text-primary text-xs uppercase tracking-widest font-label-bold",
+        children: show ? "Hide" : "Show"
+      }
+    )
+  ] });
+}
+function Toggle({ id, checked, onChange, children, disabled }) {
+  return /* @__PURE__ */ jsxs("label", { htmlFor: id, className: `flex items-start gap-3 ${disabled ? "opacity-60" : "cursor-pointer"}`, children: [
+    /* @__PURE__ */ jsx("input", { id, type: "checkbox", className: "mt-1 h-5 w-5 shrink-0 accent-[#d32f2f]", checked, disabled, onChange: (e) => onChange(e.target.checked) }),
+    /* @__PURE__ */ jsx("span", { className: "text-on-surface", children })
+  ] });
+}
+const PAGE = 100;
+function EntriesTab({ entries, jobs, lockedThrough, trashCount, showLocation, post: post2, onChange }) {
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [emp, setEmp] = useState("");
+  const [job, setJob] = useState("");
+  const [shown, setShown] = useState(PAGE);
+  const [editing, setEditing] = useState(null);
+  const [saveErr, setSaveErr] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [trash, setTrash] = useState(null);
+  const [trashErr, setTrashErr] = useState("");
+  const empNames = useMemo(() => Array.from(new Set(entries.map((e) => e.employeeName))).sort(), [entries]);
+  const jobNames = useMemo(() => Array.from(new Set(entries.map((e) => e.jobName).filter(Boolean))).sort(), [entries]);
+  const filtered = entries.filter((e) => (!from || e.date >= from) && (!to || e.date <= to) && (!emp || e.employeeName === emp) && (!job || e.jobName === job));
+  const totalHrs = filtered.reduce((s, e) => s + e.hours, 0);
+  const totalPay = filtered.reduce((s, e) => s + e.pay, 0);
+  const byKey = (key) => {
+    const m = /* @__PURE__ */ new Map();
+    for (const e of filtered) {
+      const k = e[key] || "(no job picked)";
+      const cur = m.get(k) || { hours: 0, pay: 0 };
+      m.set(k, { hours: cur.hours + e.hours, pay: cur.pay + e.pay });
+    }
+    return Array.from(m.entries()).sort((a, b) => b[1].pay - a[1].pay);
+  };
+  const csv = () => {
+    const head = ["Date", "Employee", "Job", "Address", "Clock In", "Clock Out", "Lunch (min)", "Hours", "Rate", "Pay"];
+    const rows = filtered.map((e) => [e.date, e.employeeName, e.jobName, e.address, e.clockIn, e.clockOut, lunchToMins(e.lunch), e.hours, e.rate, e.pay]);
+    downloadFile(`randolph-hours${from ? `-${from}` : ""}${to ? `-to-${to}` : ""}.csv`, csvText([head, ...rows]));
+  };
+  const del = async (id) => {
+    if (!confirm("Delete this shift? It stays in Deleted Shifts for 90 days in case you need it back.")) return;
+    await post2({ action: "delete-entry", id });
+    setTrash(null);
+    onChange();
+  };
+  const saveEdit = async (ev) => {
+    ev.preventDefault();
+    setSaveErr("");
+    if (!editing) return;
+    setBusy(true);
+    try {
+      await post2({ action: "update-entry", id: editing.id, date: editing.date, clockIn: editing.clockIn, clockOut: editing.clockOut, lunch: lunchToMins(editing.lunch), jobId: editing.jobId || "", jobName: editing.jobName, address: editing.address });
+      setEditing(null);
+      await onChange();
+    } catch (e2) {
+      setSaveErr(e2.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const openTrash = async () => {
+    setTrashErr("");
+    if (trash) return setTrash(null);
+    try {
+      setTrash((await post2({ action: "admin-trash" })).trash || []);
+    } catch (e2) {
+      setTrashErr(e2.message);
+    }
+  };
+  const restore = async (id) => {
+    setTrashErr("");
+    try {
+      await post2({ action: "restore-entry", id });
+      setTrash((await post2({ action: "admin-trash" })).trash || []);
+      onChange();
+    } catch (e2) {
+      setTrashErr(e2.message);
+    }
+  };
+  const editingJobValue = editing ? editing.jobId || (editing.jobName ? `name:${editing.jobName}` : "") : "";
+  const pickJob = (v) => {
+    if (!editing) return;
+    const j = jobs.find((x) => x.id === v);
+    if (j) setEditing({ ...editing, jobId: j.id, jobName: j.name, address: j.address || editing.address });
+    else if (!v) setEditing({ ...editing, jobId: "", jobName: "" });
+  };
+  return /* @__PURE__ */ jsxs("div", { className: "space-y-10", children: [
+    editing && /* @__PURE__ */ jsx("div", { className: "fixed inset-0 z-[100] bg-black/70 flex items-center justify-center p-4", onClick: () => setEditing(null), children: /* @__PURE__ */ jsxs(
+      "form",
+      {
+        onClick: (ev) => ev.stopPropagation(),
+        onSubmit: saveEdit,
+        role: "dialog",
+        "aria-modal": "true",
+        "aria-label": `Edit shift for ${editing.employeeName}`,
+        className: "bg-surface-container-lowest border-2 border-primary p-6 w-full max-w-md space-y-4 max-h-[90vh] overflow-y-auto",
+        children: [
+          /* @__PURE__ */ jsxs("h3", { className: "font-headline-md text-headline-md uppercase", children: [
+            "Edit Shift: ",
+            editing.employeeName
+          ] }),
+          /* @__PURE__ */ jsxs("div", { children: [
+            /* @__PURE__ */ jsx("label", { className: label, htmlFor: "ed-date", children: "Date" }),
+            /* @__PURE__ */ jsx("input", { id: "ed-date", type: "date", className: input, value: editing.date, onChange: (ev) => setEditing({ ...editing, date: ev.target.value }) })
+          ] }),
+          /* @__PURE__ */ jsxs("div", { className: "grid grid-cols-2 gap-3", children: [
+            /* @__PURE__ */ jsxs("div", { children: [
+              /* @__PURE__ */ jsx("label", { className: label, htmlFor: "ed-in", children: "Clock In" }),
+              /* @__PURE__ */ jsx("input", { id: "ed-in", type: "time", className: input, value: editing.clockIn, onChange: (ev) => setEditing({ ...editing, clockIn: ev.target.value }) })
+            ] }),
+            /* @__PURE__ */ jsxs("div", { children: [
+              /* @__PURE__ */ jsx("label", { className: label, htmlFor: "ed-out", children: "Clock Out" }),
+              /* @__PURE__ */ jsx("input", { id: "ed-out", type: "time", className: input, value: editing.clockOut, onChange: (ev) => setEditing({ ...editing, clockOut: ev.target.value }) })
+            ] })
+          ] }),
+          /* @__PURE__ */ jsxs("div", { children: [
+            /* @__PURE__ */ jsx("label", { className: label, htmlFor: "ed-lunch", children: "Lunch Break" }),
+            /* @__PURE__ */ jsxs("select", { id: "ed-lunch", className: input, value: lunchToMins(editing.lunch), onChange: (ev) => setEditing({ ...editing, lunch: Number(ev.target.value) }), children: [
+              LUNCH_OPTIONS.map((o) => /* @__PURE__ */ jsx("option", { value: o.v, children: o.label }, o.v)),
+              !LUNCH_OPTIONS.some((o) => o.v === lunchToMins(editing.lunch)) && /* @__PURE__ */ jsx("option", { value: lunchToMins(editing.lunch), children: lunchLabel(editing.lunch) })
+            ] })
+          ] }),
+          /* @__PURE__ */ jsxs("div", { children: [
+            /* @__PURE__ */ jsx("label", { className: label, htmlFor: "ed-job", children: "Job" }),
+            /* @__PURE__ */ jsxs("select", { id: "ed-job", className: input, value: editingJobValue, onChange: (ev) => pickJob(ev.target.value), children: [
+              /* @__PURE__ */ jsx("option", { value: "", children: "No job picked" }),
+              jobs.map((j) => /* @__PURE__ */ jsx("option", { value: j.id, children: j.name }, j.id)),
+              editingJobValue.startsWith("name:") && /* @__PURE__ */ jsxs("option", { value: editingJobValue, children: [
+                editing.jobName,
+                " (old name)"
+              ] })
+            ] })
+          ] }),
+          /* @__PURE__ */ jsxs("div", { children: [
+            /* @__PURE__ */ jsx("label", { className: label, htmlFor: "ed-addr", children: "Address" }),
+            /* @__PURE__ */ jsx("input", { id: "ed-addr", className: input, value: editing.address, onChange: (ev) => setEditing({ ...editing, address: ev.target.value }) })
+          ] }),
+          saveErr && /* @__PURE__ */ jsx("p", { role: "alert", className: errorText, children: saveErr }),
+          /* @__PURE__ */ jsxs("div", { className: "flex gap-3", children: [
+            /* @__PURE__ */ jsx("button", { className: btn, disabled: busy, children: busy ? "Saving…" : "Save" }),
+            /* @__PURE__ */ jsx("button", { type: "button", className: btnGhost, onClick: () => setEditing(null), children: "Cancel" })
+          ] }),
+          /* @__PURE__ */ jsx("p", { className: "text-on-surface-variant/70 text-xs", children: "Hours and pay recalculate when you save, at the rate this shift was logged at." }),
+          !!editing.history?.length && /* @__PURE__ */ jsxs("div", { className: `border-t ${hairline} pt-3`, children: [
+            /* @__PURE__ */ jsx("div", { className: "text-on-surface-variant text-xs uppercase tracking-widest font-label-bold mb-2", children: "Earlier versions" }),
+            /* @__PURE__ */ jsx("ul", { className: "space-y-1 text-on-surface-variant text-xs", children: editing.history.map((h, i) => /* @__PURE__ */ jsxs("li", { children: [
+              "Until ",
+              fmtStamp(h.at),
+              ": ",
+              fmtDay(h.before.date),
+              ", ",
+              fmtTime(h.before.clockIn),
+              " to ",
+              fmtTime(h.before.clockOut),
+              ", ",
+              hrs(h.before.hours),
+              " hrs at ",
+              money(h.before.rate),
+              ", ",
+              money(h.before.pay),
+              h.what === "rate" ? " (changed by a raise)" : ""
+            ] }, i)) })
+          ] })
+        ]
+      }
+    ) }),
+    /* @__PURE__ */ jsxs("div", { className: "grid grid-cols-2 md:grid-cols-4 gap-4", children: [
+      /* @__PURE__ */ jsxs("div", { children: [
+        /* @__PURE__ */ jsx("label", { className: label, htmlFor: "f-from", children: "From" }),
+        /* @__PURE__ */ jsx("input", { id: "f-from", type: "date", className: input, value: from, onChange: (e) => {
+          setFrom(e.target.value);
+          setShown(PAGE);
+        } })
+      ] }),
+      /* @__PURE__ */ jsxs("div", { children: [
+        /* @__PURE__ */ jsx("label", { className: label, htmlFor: "f-to", children: "To" }),
+        /* @__PURE__ */ jsx("input", { id: "f-to", type: "date", className: input, value: to, onChange: (e) => {
+          setTo(e.target.value);
+          setShown(PAGE);
+        } })
+      ] }),
+      /* @__PURE__ */ jsxs("div", { children: [
+        /* @__PURE__ */ jsx("label", { className: label, htmlFor: "f-emp", children: "Employee" }),
+        /* @__PURE__ */ jsxs("select", { id: "f-emp", className: input, value: emp, onChange: (e) => {
+          setEmp(e.target.value);
+          setShown(PAGE);
+        }, children: [
+          /* @__PURE__ */ jsx("option", { value: "", children: "All" }),
+          empNames.map((n) => /* @__PURE__ */ jsx("option", { children: n }, n))
+        ] })
+      ] }),
+      /* @__PURE__ */ jsxs("div", { children: [
+        /* @__PURE__ */ jsx("label", { className: label, htmlFor: "f-job", children: "Job" }),
+        /* @__PURE__ */ jsxs("select", { id: "f-job", className: input, value: job, onChange: (e) => {
+          setJob(e.target.value);
+          setShown(PAGE);
+        }, children: [
+          /* @__PURE__ */ jsx("option", { value: "", children: "All" }),
+          jobNames.map((n) => /* @__PURE__ */ jsx("option", { children: n }, n))
+        ] })
+      ] })
+    ] }),
+    /* @__PURE__ */ jsx(Counts, { items: [
+      { n: filtered.length.toLocaleString("en-US"), label: filtered.length === 1 ? "shift" : "shifts" },
+      { n: hrs(totalHrs), label: "hours" },
+      { n: money(totalPay), label: "in pay before overtime" }
+    ] }),
+    /* @__PURE__ */ jsxs("div", { className: "grid md:grid-cols-2 gap-x-10 gap-y-8", children: [
+      /* @__PURE__ */ jsx(RollUp, { title: "By Employee", rows: byKey("employeeName") }),
+      /* @__PURE__ */ jsx(RollUp, { title: "By Job", rows: byKey("jobName") })
+    ] }),
+    /* @__PURE__ */ jsxs("div", { children: [
+      /* @__PURE__ */ jsx(SectionHead, { title: "Shifts", children: /* @__PURE__ */ jsx("button", { className: btn, onClick: csv, disabled: !filtered.length, children: "Export CSV" }) }),
+      filtered.length === 0 && /* @__PURE__ */ jsx("p", { className: "py-6 text-on-surface-variant", children: "No shifts match." }),
+      /* @__PURE__ */ jsx("ul", { children: filtered.slice(0, shown).map((e) => {
+        const isLocked = !!lockedThrough && e.date <= lockedThrough;
+        return /* @__PURE__ */ jsxs("li", { className: `py-3 border-b ${hairline} flex flex-wrap items-baseline gap-x-5 gap-y-1`, children: [
+          /* @__PURE__ */ jsx("span", { className: "w-28 shrink-0 text-on-surface-variant", children: fmtDay(e.date) }),
+          /* @__PURE__ */ jsx("span", { className: "font-label-bold min-w-[9rem] flex-1", children: e.employeeName }),
+          /* @__PURE__ */ jsx("span", { className: "basis-full md:basis-0 md:flex-[2] min-w-0 text-on-surface-variant break-words", children: e.jobName || "No job picked" }),
+          /* @__PURE__ */ jsxs("span", { className: "text-on-surface-variant text-sm md:w-[17rem] md:text-right", children: [
+            fmtTime(e.clockIn),
+            " to ",
+            fmtTime(e.clockOut),
+            ", ",
+            lunchLabel(e.lunch)
+          ] }),
+          /* @__PURE__ */ jsxs("span", { className: "font-label-bold md:w-16 md:text-right", children: [
+            hrs(e.hours),
+            " hrs"
+          ] }),
+          /* @__PURE__ */ jsx("span", { className: "font-label-bold text-primary md:w-24 md:text-right", children: money(e.pay) }),
+          /* @__PURE__ */ jsx("span", { className: "ml-auto flex items-baseline justify-end gap-4 md:w-28", children: isLocked ? /* @__PURE__ */ jsx("span", { className: "text-on-surface-variant/70 text-xs uppercase tracking-wider", children: "Locked" }) : /* @__PURE__ */ jsxs(Fragment, { children: [
+            /* @__PURE__ */ jsx("button", { onClick: () => {
+              setSaveErr("");
+              setEditing(e);
+            }, className: textLink, children: "Edit" }),
+            /* @__PURE__ */ jsx("button", { onClick: () => del(e.id), className: "text-on-surface-variant hover:text-error text-sm underline underline-offset-4", children: "Delete" })
+          ] }) }),
+          (showLocation || e.locIn || e.locOut) && (e.locIn || e.locOut || e.locInNote || e.locOutNote) && /* @__PURE__ */ jsxs("span", { className: "basis-full text-on-surface-variant/80 text-xs", children: [
+            "Clocked in: ",
+            e.locIn ? /* @__PURE__ */ jsx("a", { className: "underline underline-offset-2 hover:text-primary", href: mapLink(e.locIn), target: "_blank", rel: "noreferrer", children: "see on map" }) : e.source === "manual" ? "logged by hand" : LOC_NOTE[e.locInNote || ""] || "no location",
+            " · ",
+            "Clocked out: ",
+            e.locOut ? /* @__PURE__ */ jsx("a", { className: "underline underline-offset-2 hover:text-primary", href: mapLink(e.locOut), target: "_blank", rel: "noreferrer", children: "see on map" }) : LOC_NOTE[e.locOutNote || ""] || "no location"
+          ] }),
+          !!e.history?.length && /* @__PURE__ */ jsxs("span", { className: "basis-full text-on-surface-variant/70 text-xs", children: [
+            "Changed ",
+            fmtStamp(e.history[0].at),
+            ". Open Edit to see what it was before."
+          ] })
+        ] }, e.id);
+      }) }),
+      filtered.length > shown && /* @__PURE__ */ jsx("div", { className: "pt-5", children: /* @__PURE__ */ jsxs("button", { className: btnGhost, onClick: () => setShown(shown + PAGE), children: [
+        "Show ",
+        Math.min(PAGE, filtered.length - shown),
+        " more"
+      ] }) }),
+      trashCount > 0 && /* @__PURE__ */ jsxs("div", { className: "pt-8", children: [
+        /* @__PURE__ */ jsx("button", { className: textLink, onClick: openTrash, "aria-expanded": !!trash, children: trash ? "Hide deleted shifts" : `Deleted shifts (${trashCount})` }),
+        trashErr && /* @__PURE__ */ jsx("p", { role: "alert", className: `${errorText} mt-2`, children: trashErr }),
+        trash && /* @__PURE__ */ jsx("ul", { className: "mt-3", children: trash.map((e) => /* @__PURE__ */ jsxs("li", { className: `py-3 border-b ${hairline} flex flex-wrap items-baseline gap-x-5 gap-y-1 text-on-surface-variant`, children: [
+          /* @__PURE__ */ jsx("span", { className: "w-28 shrink-0", children: fmtDay(e.date) }),
+          /* @__PURE__ */ jsx("span", { className: "font-label-bold text-on-surface min-w-[9rem] flex-1", children: e.employeeName }),
+          /* @__PURE__ */ jsxs("span", { className: "text-sm", children: [
+            fmtTime(e.clockIn),
+            " to ",
+            fmtTime(e.clockOut),
+            ", ",
+            hrs(e.hours),
+            " hrs, ",
+            money(e.pay)
+          ] }),
+          /* @__PURE__ */ jsxs("span", { className: "text-xs", children: [
+            "deleted ",
+            e.deletedAt ? fmtStamp(e.deletedAt) : ""
+          ] }),
+          /* @__PURE__ */ jsx("button", { className: `${textLink} ml-auto`, onClick: () => restore(e.id), children: "Put back" })
+        ] }, e.id)) })
+      ] })
+    ] })
+  ] });
+}
+function RollUp({ title, rows }) {
+  return /* @__PURE__ */ jsxs("div", { children: [
+    /* @__PURE__ */ jsx(SectionHead, { title }),
+    rows.length === 0 ? /* @__PURE__ */ jsx("p", { className: "text-on-surface-variant text-sm", children: "Nothing logged in this range." }) : /* @__PURE__ */ jsx("ul", { children: rows.map(([k, v]) => /* @__PURE__ */ jsxs("li", { className: `flex flex-wrap justify-between items-baseline gap-x-4 py-2 border-b ${hairline}`, children: [
+      /* @__PURE__ */ jsx("span", { className: "min-w-0 break-words", children: k }),
+      /* @__PURE__ */ jsxs("span", { className: "whitespace-nowrap", children: [
+        /* @__PURE__ */ jsxs("strong", { className: "text-on-surface", children: [
+          hrs(v.hours),
+          " hrs"
+        ] }),
+        " ",
+        /* @__PURE__ */ jsx("span", { className: "text-primary font-label-bold", children: money(v.pay) })
+      ] })
+    ] }, k)) })
+  ] });
+}
+function PayStubs({ rows, onClose }) {
+  useEffect(() => {
+    document.body.classList.add("printing-stubs");
+    const onKey = (e) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.body.classList.remove("printing-stubs");
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [onClose]);
+  return createPortal(
+    /* @__PURE__ */ jsxs("div", { className: "stub-sheet fixed inset-0 z-[200] bg-white text-black overflow-y-auto", role: "dialog", "aria-modal": "true", "aria-label": "Pay stubs", children: [
+      /* @__PURE__ */ jsxs("div", { className: "stub-toolbar sticky top-0 bg-white border-b border-neutral-300 px-4 py-3 flex flex-wrap items-center justify-between gap-3", children: [
+        /* @__PURE__ */ jsxs("span", { className: "text-sm text-neutral-700", children: [
+          rows.length,
+          " pay stub",
+          rows.length === 1 ? "" : "s",
+          '. Choose "Save as PDF" in the print window to keep a copy.'
+        ] }),
+        /* @__PURE__ */ jsxs("span", { className: "flex gap-3", children: [
+          /* @__PURE__ */ jsx("button", { onClick: () => window.print(), className: "bg-black text-white font-bold uppercase text-sm px-5 py-2.5", children: "Print" }),
+          /* @__PURE__ */ jsx("button", { onClick: onClose, className: "border border-neutral-400 text-neutral-800 font-bold uppercase text-sm px-5 py-2.5", children: "Close" })
+        ] })
+      ] }),
+      rows.map((r) => /* @__PURE__ */ jsx(Stub, { row: r }, r.key))
+    ] }),
+    document.body
+  );
+}
+function Stub({ row }) {
+  const cell = "py-1.5 pr-3 align-top";
+  return /* @__PURE__ */ jsxs("article", { className: "stub-page max-w-3xl mx-auto px-6 py-10 text-[14px] leading-snug", children: [
+    /* @__PURE__ */ jsxs("header", { className: "flex flex-wrap justify-between gap-4 border-b-2 border-black pb-4", children: [
+      /* @__PURE__ */ jsxs("div", { children: [
+        /* @__PURE__ */ jsx("div", { className: "text-2xl font-extrabold uppercase tracking-wide", children: BUSINESS.name }),
+        /* @__PURE__ */ jsxs("div", { className: "text-neutral-700", children: [
+          BUSINESS.address.locality,
+          ", ",
+          BUSINESS.address.regionFull,
+          " · ",
+          BUSINESS.phone
+        ] })
+      ] }),
+      /* @__PURE__ */ jsxs("div", { className: "text-right", children: [
+        /* @__PURE__ */ jsx("div", { className: "font-bold uppercase tracking-wide", children: "Earnings Statement" }),
+        /* @__PURE__ */ jsxs("div", { className: "text-neutral-700", children: [
+          "Pay period ",
+          fmtDate(row.week),
+          " to ",
+          fmtDate(addDays(row.week, 6))
+        ] })
+      ] })
+    ] }),
+    /* @__PURE__ */ jsxs("div", { className: "flex flex-wrap justify-between gap-4 py-5", children: [
+      /* @__PURE__ */ jsxs("div", { children: [
+        /* @__PURE__ */ jsx("div", { className: "text-neutral-600 text-xs uppercase tracking-wide", children: "Employee" }),
+        /* @__PURE__ */ jsx("div", { className: "text-lg font-bold", children: row.employee })
+      ] }),
+      /* @__PURE__ */ jsxs("div", { className: "text-right", children: [
+        /* @__PURE__ */ jsx("div", { className: "text-neutral-600 text-xs uppercase tracking-wide", children: "Gross pay" }),
+        /* @__PURE__ */ jsx("div", { className: "text-2xl font-extrabold", children: money(row.gross) })
+      ] })
+    ] }),
+    /* @__PURE__ */ jsx("h2", { className: "font-bold uppercase text-xs tracking-wide border-b border-neutral-400 pb-1 mb-1", children: "Earnings" }),
+    /* @__PURE__ */ jsxs("table", { className: "w-full mb-6", children: [
+      /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { className: "text-left text-neutral-600 text-xs uppercase", children: [
+        /* @__PURE__ */ jsx("th", { className: cell, children: "Type" }),
+        /* @__PURE__ */ jsx("th", { className: `${cell} text-right`, children: "Hours" }),
+        /* @__PURE__ */ jsx("th", { className: `${cell} text-right`, children: "Rate" }),
+        /* @__PURE__ */ jsx("th", { className: "py-1.5 text-right", children: "Amount" })
+      ] }) }),
+      /* @__PURE__ */ jsxs("tbody", { children: [
+        row.lines.map((l) => /* @__PURE__ */ jsxs("tr", { className: "border-t border-neutral-200", children: [
+          /* @__PURE__ */ jsxs("td", { className: cell, children: [
+            l.kind,
+            l.kind === "Overtime" ? " (1.5 times the hourly rate)" : ""
+          ] }),
+          /* @__PURE__ */ jsx("td", { className: `${cell} text-right`, children: hrs(l.hours) }),
+          /* @__PURE__ */ jsx("td", { className: `${cell} text-right`, children: money(l.rate) }),
+          /* @__PURE__ */ jsx("td", { className: "py-1.5 text-right", children: money(l.amount) })
+        ] }, `${l.kind}${l.rate}`)),
+        /* @__PURE__ */ jsxs("tr", { className: "border-t-2 border-black font-bold", children: [
+          /* @__PURE__ */ jsx("td", { className: cell, children: "Total" }),
+          /* @__PURE__ */ jsx("td", { className: `${cell} text-right`, children: hrs(row.total) }),
+          /* @__PURE__ */ jsx("td", { className: cell }),
+          /* @__PURE__ */ jsx("td", { className: "py-1.5 text-right", children: money(row.gross) })
+        ] })
+      ] })
+    ] }),
+    /* @__PURE__ */ jsx("h2", { className: "font-bold uppercase text-xs tracking-wide border-b border-neutral-400 pb-1 mb-1", children: "Shifts" }),
+    /* @__PURE__ */ jsxs("table", { className: "w-full mb-6", children: [
+      /* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { className: "text-left text-neutral-600 text-xs uppercase", children: [
+        /* @__PURE__ */ jsx("th", { className: cell, children: "Day" }),
+        /* @__PURE__ */ jsx("th", { className: cell, children: "In" }),
+        /* @__PURE__ */ jsx("th", { className: cell, children: "Out" }),
+        /* @__PURE__ */ jsx("th", { className: cell, children: "Lunch" }),
+        /* @__PURE__ */ jsx("th", { className: "py-1.5 text-right", children: "Hours" })
+      ] }) }),
+      row.shifts.map((e) => /* @__PURE__ */ jsxs("tbody", { className: "border-t border-neutral-200", children: [
+        /* @__PURE__ */ jsxs("tr", { children: [
+          /* @__PURE__ */ jsx("td", { className: `${cell} whitespace-nowrap`, children: fmtDay(e.date) }),
+          /* @__PURE__ */ jsx("td", { className: `${cell} whitespace-nowrap`, children: fmtTime(e.clockIn) }),
+          /* @__PURE__ */ jsx("td", { className: `${cell} whitespace-nowrap`, children: fmtTime(e.clockOut) }),
+          /* @__PURE__ */ jsx("td", { className: `${cell} whitespace-nowrap`, children: lunchToMins(e.lunch) ? `${lunchToMins(e.lunch)} min` : "None" }),
+          /* @__PURE__ */ jsx("td", { className: "py-1.5 text-right", children: hrs(e.hours) })
+        ] }),
+        e.jobName && /* @__PURE__ */ jsx("tr", { children: /* @__PURE__ */ jsx("td", { colSpan: 5, className: "pb-1.5 text-neutral-600 text-xs break-words", children: e.jobName }) })
+      ] }, e.id))
+    ] }),
+    /* @__PURE__ */ jsx("p", { className: "text-neutral-700 text-xs", children: "Gross pay is the amount earned before taxes and other withholdings. Overtime is paid on hours past 40 in the workweek." })
+  ] });
+}
+const usDate = (iso) => {
+  const [y, m, d] = iso.split("-").map(Number);
+  return `${m}/${d}/${y}`;
+};
+const usDatePadded = (iso) => {
+  const [y, m, d] = iso.split("-");
+  return `${m}/${d}/${y}`;
+};
+const customerFor = (e, jobs) => {
+  const j = jobs.find((x) => e.jobId ? x.id === e.jobId : x.name === e.jobName);
+  return (j?.customer || e.jobName || "").trim();
+};
+const noteFor = (e, jobs) => {
+  const j = jobs.find((x) => e.jobId ? x.id === e.jobId : x.name === e.jobName);
+  return [j?.workType, e.address].filter(Boolean).join(", ");
+};
+const byDate = (list) => [...list].sort((a, b) => (a.date + a.employeeName + (a.createdAt || "")).localeCompare(b.date + b.employeeName + (b.createdAt || "")));
+function qboCsv(entries, jobs, qb) {
+  const head = ["TXNDATE", "NAME", "TIME", "DESCRIPTION", "BILLABLESTATUS", "CUSTOMER", "SERVICEITEM"];
+  const rows = byDate(entries).filter((e) => e.hours > 0).map((e) => [usDatePadded(e.date), e.employeeName, r2(e.hours), noteFor(e, jobs), "NotBillable", customerFor(e, jobs), qb.serviceItem]);
+  return csvText([head, ...rows]);
+}
+const tab = (v) => String(v ?? "").replace(/[\t\r\n]+/g, " ").trim();
+const duration = (hours) => {
+  const mins = Math.round(hours * 60);
+  return `${Math.floor(mins / 60)}:${String(mins % 60).padStart(2, "0")}`;
+};
+function desktopIif(entries, jobs, qb, startDay) {
+  const lines = [];
+  if (qb.companyName.trim() && qb.companyCreateTime.trim()) {
+    lines.push(["!TIMERHDR", "VER", "REL", "COMPANYNAME", "IMPORTEDBEFORE", "FROMTIMER", "COMPANYCREATETIME"].join("	"));
+    lines.push(["TIMERHDR", "8", "0", tab(qb.companyName), "N", "Y", tab(qb.companyCreateTime)].join("	"));
+  }
+  lines.push(["!TIMEACT", "DATE", "JOB", "EMP", "ITEM", "PITEM", "DURATION", "PROJ", "NOTE", "XFERTOPAYROLL", "BILLINGSTATUS"].join("	"));
+  const soFar = /* @__PURE__ */ new Map();
+  const chrono = [...entries].sort((a, b) => (a.date + (a.createdAt || "")).localeCompare(b.date + (b.createdAt || "")));
+  const out = [];
+  for (const e of chrono) {
+    const key = `${e.employeeId || e.employeeName}|${weekStart(e.date, startDay)}`;
+    const cum = soFar.get(key) || 0;
+    const reg = Math.min(e.hours, Math.max(0, 40 - cum));
+    const ot = r2(e.hours - reg);
+    soFar.set(key, cum + e.hours);
+    if (reg > 0) out.push({ e, hours: reg, item: qb.payrollItem });
+    if (ot > 0) out.push({ e, hours: ot, item: qb.otPayrollItem || qb.payrollItem });
+  }
+  out.sort((a, b) => (a.e.date + a.e.employeeName).localeCompare(b.e.date + b.e.employeeName));
+  for (const { e, hours, item } of out) {
+    lines.push(["TIMEACT", usDate(e.date), tab(customerFor(e, jobs)), tab(e.employeeName), tab(qb.serviceItem), tab(item), duration(hours), "", tab(noteFor(e, jobs)), "Y", "0"].join("	"));
+  }
+  return lines.join("\r\n") + "\r\n";
+}
+function PayrollTab({ entries, jobs, settings, post: post2, onChange }) {
+  const { weekStartDay, lockedThrough } = settings;
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [lockDate, setLockDate] = useState(lockedThrough || "");
+  const [lockErr, setLockErr] = useState("");
+  const [stubs, setStubs] = useState(null);
+  const saveLock = async (clear = false) => {
+    setLockErr("");
+    try {
+      await post2({ action: "set-lock", lockedThrough: clear ? "" : lockDate });
+      await onChange();
+    } catch (e) {
+      setLockErr(e.message);
+    }
+  };
+  const filtered = useMemo(() => entries.filter((e) => (!from || e.date >= from) && (!to || e.date <= to)), [entries, from, to]);
+  const rows = useMemo(() => computePayroll(filtered, weekStartDay), [filtered, weekStartDay]);
+  const weeks = useMemo(() => {
+    const m = /* @__PURE__ */ new Map();
+    for (const r of rows) {
+      const list = m.get(r.week) || [];
+      list.push(r);
+      m.set(r.week, list);
+    }
+    return Array.from(m.entries());
+  }, [rows]);
+  const grossTotal = rows.reduce((s, r) => s + r.gross, 0);
+  const otTotal = rows.reduce((s, r) => s + r.ot, 0);
+  const hoursTotal = rows.reduce((s, r) => s + r.total, 0);
+  const csv = () => {
+    const head = ["Week of", "Employee", "Regular Hrs", "Overtime Hrs", "Total Hrs", "Gross Pay"];
+    downloadFile(`randolph-payroll${from ? `-${from}` : ""}${to ? `-to-${to}` : ""}.csv`, csvText([head, ...rows.map((r) => [r.week, r.employee, r.reg, r.ot, r.total, r.gross.toFixed(2)])]));
+  };
+  return /* @__PURE__ */ jsxs("div", { className: "space-y-12", children: [
+    stubs && /* @__PURE__ */ jsx(PayStubs, { rows: stubs, onClose: () => setStubs(null) }),
+    /* @__PURE__ */ jsxs("div", { children: [
+      /* @__PURE__ */ jsx(SectionHead, { title: "Lock Payroll", note: "Once you've paid a period, lock it so nobody can add or change times on or before that date." }),
+      lockedThrough ? /* @__PURE__ */ jsxs("div", { className: "flex flex-wrap items-center gap-4", children: [
+        /* @__PURE__ */ jsxs("span", { className: "font-label-bold text-primary uppercase tracking-widest text-sm", children: [
+          "Locked through ",
+          fmtDate(lockedThrough)
+        ] }),
+        /* @__PURE__ */ jsx("button", { className: btnGhost, onClick: () => saveLock(true), children: "Unlock" })
+      ] }) : /* @__PURE__ */ jsxs("div", { className: "flex flex-wrap items-end gap-3", children: [
+        /* @__PURE__ */ jsxs("div", { children: [
+          /* @__PURE__ */ jsx("label", { className: label, htmlFor: "lock-date", children: "Lock Through" }),
+          /* @__PURE__ */ jsx("input", { id: "lock-date", type: "date", className: input, value: lockDate, onChange: (e) => setLockDate(e.target.value) })
+        ] }),
+        /* @__PURE__ */ jsx("button", { className: btn, disabled: !lockDate, onClick: () => saveLock(), children: "Lock" })
+      ] }),
+      lockErr && /* @__PURE__ */ jsx("p", { role: "alert", className: `${errorText} mt-3`, children: lockErr })
+    ] }),
+    /* @__PURE__ */ jsxs("div", { children: [
+      /* @__PURE__ */ jsx(SectionHead, { title: "Weekly Payroll", children: /* @__PURE__ */ jsx("button", { className: btn, onClick: csv, disabled: !rows.length, children: "Export Payroll CSV" }) }),
+      /* @__PURE__ */ jsxs("div", { className: "grid grid-cols-2 gap-4 max-w-md mb-6", children: [
+        /* @__PURE__ */ jsxs("div", { children: [
+          /* @__PURE__ */ jsx("label", { className: label, htmlFor: "p-from", children: "From" }),
+          /* @__PURE__ */ jsx("input", { id: "p-from", type: "date", className: input, value: from, onChange: (e) => setFrom(e.target.value) })
+        ] }),
+        /* @__PURE__ */ jsxs("div", { children: [
+          /* @__PURE__ */ jsx("label", { className: label, htmlFor: "p-to", children: "To" }),
+          /* @__PURE__ */ jsx("input", { id: "p-to", type: "date", className: input, value: to, onChange: (e) => setTo(e.target.value) })
+        ] })
+      ] }),
+      /* @__PURE__ */ jsx(Counts, { items: [
+        { n: money(grossTotal), label: "gross pay" },
+        { n: hrs(hoursTotal), label: "hours" },
+        { n: hrs(otTotal), label: "of them overtime" }
+      ] }),
+      rows.length === 0 && /* @__PURE__ */ jsx("p", { className: "py-6 text-on-surface-variant", children: "No hours logged in this range." }),
+      weeks.map(([week, list]) => /* @__PURE__ */ jsxs("div", { className: "mt-8", children: [
+        /* @__PURE__ */ jsxs("div", { className: `flex flex-wrap items-baseline justify-between gap-3 border-b ${hairline} pb-2`, children: [
+          /* @__PURE__ */ jsxs("h4", { className: "font-label-bold text-label-bold uppercase tracking-widest text-on-surface-variant", children: [
+            "Week of ",
+            fmtWeek(week),
+            " to ",
+            fmtWeek(addDays(week, 6))
+          ] }),
+          /* @__PURE__ */ jsxs("span", { className: "flex items-baseline gap-4", children: [
+            /* @__PURE__ */ jsx("span", { className: "font-label-bold text-primary", children: money(list.reduce((s, r) => s + r.gross, 0)) }),
+            /* @__PURE__ */ jsx("button", { className: textLink, onClick: () => setStubs(list), children: "Print pay stubs" })
+          ] })
+        ] }),
+        /* @__PURE__ */ jsx("ul", { children: list.map((r) => /* @__PURE__ */ jsxs("li", { className: `py-3 border-b ${hairline} flex flex-wrap items-baseline gap-x-5 gap-y-1`, children: [
+          /* @__PURE__ */ jsx("span", { className: "font-label-bold min-w-[9rem] flex-1", children: r.employee }),
+          /* @__PURE__ */ jsxs("span", { className: "text-on-surface-variant", children: [
+            hrs(r.reg),
+            " regular"
+          ] }),
+          /* @__PURE__ */ jsxs("span", { className: r.ot > 0 ? "text-primary font-label-bold" : "text-on-surface-variant", children: [
+            hrs(r.ot),
+            " overtime"
+          ] }),
+          /* @__PURE__ */ jsxs("span", { className: "font-label-bold", children: [
+            hrs(r.total),
+            " hrs"
+          ] }),
+          /* @__PURE__ */ jsx("span", { className: "font-label-bold text-primary", children: money(r.gross) }),
+          /* @__PURE__ */ jsx("button", { className: `${textLink} ml-auto`, onClick: () => setStubs([r]), children: "Pay stub" })
+        ] }, r.key)) })
+      ] }, week)),
+      /* @__PURE__ */ jsxs("p", { className: "text-on-surface-variant/80 text-xs mt-6", children: [
+        "Overtime is calculated at 1.5× the hourly rate for hours over 40 in a workweek (starts ",
+        DAYS[weekStartDay],
+        "). Gross pay shown is before taxes and withholdings. Change the workweek under Settings."
+      ] })
+    ] }),
+    /* @__PURE__ */ jsx(QuickBooksExport, { entries: filtered, jobs, settings, from, to, post: post2, onChange })
+  ] });
+}
+function QuickBooksExport({ entries, jobs, settings, from, to, post: post2, onChange }) {
+  const [kind, setKind] = useState("online");
+  const [qb, setQb] = useState(settings.quickbooks);
+  const [msg, setMsg] = useState("");
+  const [err, setErr] = useState("");
+  const set = (k, v) => setQb({ ...qb, [k]: v });
+  const noJob = entries.filter((e) => !e.jobName).length;
+  const range = `${from ? `-${from}` : ""}${to ? `-to-${to}` : ""}`;
+  const download = async () => {
+    setErr("");
+    setMsg("");
+    if (kind === "desktop" && !qb.payrollItem.trim()) return setErr("Enter the payroll item name from QuickBooks first.");
+    try {
+      await post2({ action: "save-settings", quickbooks: qb });
+      onChange();
+    } catch (e) {
+      return setErr(e.message);
+    }
+    if (kind === "online") downloadFile(`randolph-time-quickbooks-online${range}.csv`, qboCsv(entries, jobs, qb));
+    else downloadFile(`randolph-time-quickbooks-desktop${range}.iif`, desktopIif(entries, jobs, qb, settings.weekStartDay), "text/plain");
+    setMsg(`Downloaded ${entries.length} shift${entries.length === 1 ? "" : "s"}.`);
+  };
+  return /* @__PURE__ */ jsxs("div", { children: [
+    /* @__PURE__ */ jsx(SectionHead, { title: "Send Hours to QuickBooks", note: "Downloads the shifts in the date range above as a file QuickBooks can read, so nobody retypes hours. Names have to match QuickBooks exactly: the employee, the customer, and the items below." }),
+    /* @__PURE__ */ jsxs("div", { className: "grid md:grid-cols-2 gap-x-10 gap-y-5 max-w-3xl", children: [
+      /* @__PURE__ */ jsxs("div", { className: "md:col-span-2 max-w-sm", children: [
+        /* @__PURE__ */ jsx("label", { className: label, htmlFor: "qb-kind", children: "Which QuickBooks" }),
+        /* @__PURE__ */ jsxs("select", { id: "qb-kind", className: input, value: kind, onChange: (e) => setKind(e.target.value), children: [
+          /* @__PURE__ */ jsx("option", { value: "online", children: "QuickBooks Online" }),
+          /* @__PURE__ */ jsx("option", { value: "desktop", children: "QuickBooks Desktop" })
+        ] })
+      ] }),
+      /* @__PURE__ */ jsxs("div", { children: [
+        /* @__PURE__ */ jsx("label", { className: label, htmlFor: "qb-service", children: "Service item" }),
+        /* @__PURE__ */ jsx("input", { id: "qb-service", className: input, value: qb.serviceItem, onChange: (e) => set("serviceItem", e.target.value), placeholder: "As named in QuickBooks" })
+      ] }),
+      kind === "desktop" && /* @__PURE__ */ jsxs(Fragment, { children: [
+        /* @__PURE__ */ jsxs("div", { children: [
+          /* @__PURE__ */ jsx("label", { className: label, htmlFor: "qb-pay", children: "Payroll item for regular hours" }),
+          /* @__PURE__ */ jsx("input", { id: "qb-pay", className: input, value: qb.payrollItem, onChange: (e) => set("payrollItem", e.target.value), placeholder: "As named in QuickBooks" })
+        ] }),
+        /* @__PURE__ */ jsxs("div", { children: [
+          /* @__PURE__ */ jsx("label", { className: label, htmlFor: "qb-ot", children: "Payroll item for overtime" }),
+          /* @__PURE__ */ jsx("input", { id: "qb-ot", className: input, value: qb.otPayrollItem, onChange: (e) => set("otPayrollItem", e.target.value), placeholder: "As named in QuickBooks" })
+        ] }),
+        /* @__PURE__ */ jsxs("div", { children: [
+          /* @__PURE__ */ jsx("label", { className: label, htmlFor: "qb-co", children: "Company name (2021 and older only)" }),
+          /* @__PURE__ */ jsx("input", { id: "qb-co", className: input, value: qb.companyName, onChange: (e) => set("companyName", e.target.value) })
+        ] }),
+        /* @__PURE__ */ jsxs("div", { children: [
+          /* @__PURE__ */ jsx("label", { className: label, htmlFor: "qb-cct", children: "Company create time (2021 and older only)" }),
+          /* @__PURE__ */ jsx("input", { id: "qb-cct", className: input, inputMode: "numeric", value: qb.companyCreateTime, onChange: (e) => set("companyCreateTime", e.target.value.replace(/\D/g, "")) })
+        ] })
+      ] })
+    ] }),
+    /* @__PURE__ */ jsxs("div", { className: "text-on-surface-variant text-sm mt-5 max-w-3xl space-y-2", children: [
+      kind === "online" ? /* @__PURE__ */ jsx("p", { children: "QuickBooks Online cannot import hours by itself. This file loads through an importer app, Transaction Pro or SaasAnt Transactions, and is laid out in their column order." }) : /* @__PURE__ */ jsxs(Fragment, { children: [
+        /* @__PURE__ */ jsx("p", { children: "In QuickBooks 2022 and newer, import it under File, Utilities, Import, IIF Files, and leave the two company fields blank." }),
+        /* @__PURE__ */ jsx("p", { children: "In 2021 and older, import it under File, Utilities, Import, Timer Activities. That version needs both company fields. To find them, export Timer Lists from QuickBooks, open that file, and copy the company name and the number at the end of the TIMERHDR line." })
+      ] }),
+      noJob > 0 && /* @__PURE__ */ jsxs("p", { children: [
+        noJob,
+        " shift",
+        noJob === 1 ? " has" : "s have",
+        " no job picked, so the customer will be blank. Set the job under Entries first, or QuickBooks will reject those lines."
+      ] })
+    ] }),
+    err && /* @__PURE__ */ jsx("p", { role: "alert", className: `${errorText} mt-4`, children: err }),
+    msg && /* @__PURE__ */ jsx("p", { role: "status", className: `${okText} mt-4`, children: msg }),
+    /* @__PURE__ */ jsx("div", { className: "mt-5", children: /* @__PURE__ */ jsx("button", { className: btn, onClick: download, disabled: !entries.length, children: "Download for QuickBooks" }) })
+  ] });
+}
+const matTotalOf = (j) => (j.materials || []).reduce((s, m) => s + (m.amount || 0), 0);
+function ProjectsTab({ jobs, entries, post: post2, onChange }) {
+  const totals = useMemo(() => {
+    let revenue = 0, cost = 0, count = 0;
+    for (const j of jobs) {
+      const value = j.contractValue || 0;
+      if (value <= 0) continue;
+      revenue += value;
+      cost += laborForJob(j, entries).pay + matTotalOf(j);
+      count++;
+    }
+    const profit = revenue - cost;
+    return { revenue, cost, profit, margin: revenue > 0 ? profit / revenue * 100 : 0, count };
+  }, [jobs, entries]);
+  const sorted = useMemo(() => [...jobs].sort((a, b) => (b.contractValue || 0) - (a.contractValue || 0)), [jobs]);
+  const byType = useMemo(() => {
+    const m = /* @__PURE__ */ new Map();
+    for (const j of jobs) {
+      const value = j.contractValue || 0;
+      if (value <= 0) continue;
+      const type = (j.workType || "Other").trim() || "Other";
+      const c = m.get(type) || { count: 0, revenue: 0, cost: 0 };
+      c.count++;
+      c.revenue += value;
+      c.cost += laborForJob(j, entries).pay + matTotalOf(j);
+      m.set(type, c);
+    }
+    return Array.from(m.entries()).map(([type, d]) => ({ type, count: d.count, revenue: d.revenue, profit: d.revenue - d.cost, margin: d.revenue > 0 ? (d.revenue - d.cost) / d.revenue * 100 : 0 })).sort((a, b) => b.margin - a.margin);
+  }, [jobs, entries]);
+  const csv = () => {
+    const head = ["Project", "Status", "Contract Value", "Labor Hours", "Labor $", "Materials $", "Total Cost", "Profit", "Margin %"];
+    const rows = jobs.filter((j) => (j.contractValue || 0) > 0).map((j) => {
+      const l = laborForJob(j, entries);
+      const mat = matTotalOf(j);
+      const cost = l.pay + mat;
+      const value = j.contractValue || 0;
+      const profit = value - cost;
+      return [j.name, j.status || "active", value, l.hours.toFixed(2), Math.round(l.pay), Math.round(mat), Math.round(cost), Math.round(profit), (value > 0 ? profit / value * 100 : 0).toFixed(1)];
+    });
+    downloadFile("randolph-projects-pnl.csv", csvText([head, ...rows]));
+  };
+  return /* @__PURE__ */ jsxs("div", { className: "space-y-12", children: [
+    /* @__PURE__ */ jsxs("div", { className: "space-y-4", children: [
+      /* @__PURE__ */ jsx("p", { className: "text-on-surface-variant text-sm max-w-2xl", children: "Your money side, private to you. Add the contract value and materials for a job and the labor pulls straight from the time clock. Profit and margin add up automatically, and every job stays on file so you can look back years later." }),
+      /* @__PURE__ */ jsx(Counts, { items: [
+        { n: money0(totals.revenue), label: `revenue across ${totals.count} priced job${totals.count === 1 ? "" : "s"}` },
+        { n: money0(totals.cost), label: "cost" },
+        { n: money0(totals.profit), label: "profit", tone: totals.profit >= 0 ? "good" : "bad" },
+        { n: `${totals.margin.toFixed(0)}%`, label: "average margin" }
+      ] })
+    ] }),
+    byType.length > 0 && /* @__PURE__ */ jsxs("div", { children: [
+      /* @__PURE__ */ jsx(SectionHead, { title: "Profit by Type of Work", note: "Across all priced jobs. Shows which kind of work actually makes you money, so you know what to chase." }),
+      /* @__PURE__ */ jsx("ul", { children: byType.map((r) => /* @__PURE__ */ jsxs("li", { className: `py-3 border-b ${hairline} flex flex-wrap items-baseline gap-x-5 gap-y-1`, children: [
+        /* @__PURE__ */ jsx("span", { className: "font-label-bold min-w-[9rem] flex-1 break-words", children: r.type }),
+        /* @__PURE__ */ jsxs("span", { className: "text-on-surface-variant", children: [
+          r.count,
+          " job",
+          r.count === 1 ? "" : "s"
+        ] }),
+        /* @__PURE__ */ jsxs("span", { className: "text-on-surface-variant", children: [
+          money0(r.revenue),
+          " revenue"
+        ] }),
+        /* @__PURE__ */ jsxs("span", { className: `font-label-bold ${r.profit >= 0 ? "text-[#5ec26a]" : "text-error"}`, children: [
+          money0(r.profit),
+          " profit"
+        ] }),
+        /* @__PURE__ */ jsxs("span", { className: "font-label-bold text-primary", children: [
+          r.margin.toFixed(0),
+          "% margin"
+        ] })
+      ] }, r.type)) })
+    ] }),
+    /* @__PURE__ */ jsxs("div", { children: [
+      /* @__PURE__ */ jsx(SectionHead, { title: "Jobs", children: /* @__PURE__ */ jsx("button", { className: btn, onClick: csv, disabled: totals.count === 0, children: "Export P&L CSV" }) }),
+      jobs.length === 0 && /* @__PURE__ */ jsx("p", { className: "text-on-surface-variant", children: "No jobs yet. Add one under the Jobs tab first." }),
+      /* @__PURE__ */ jsx("div", { className: "space-y-10", children: sorted.map((j) => /* @__PURE__ */ jsx(ProjectCard, { job: j, labor: laborForJob(j, entries), post: post2, onChange }, j.id)) })
+    ] })
+  ] });
+}
+function ProjectCard({ job, labor, post: post2, onChange }) {
+  const [value, setValue] = useState(job.contractValue ? String(job.contractValue) : "");
+  const [materials, setMaterials] = useState(job.materials?.length ? job.materials.map((m) => ({ ...m })) : []);
+  const [estH, setEstH] = useState(job.estHours ? String(job.estHours) : "");
+  const [estL, setEstL] = useState(job.estLabor ? String(job.estLabor) : "");
+  const [estM, setEstM] = useState(job.estMaterials ? String(job.estMaterials) : "");
+  const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [err, setErr] = useState("");
+  const matTotal = materials.reduce((s, m) => s + (Number(m.amount) || 0), 0);
+  const v = Number(value) || 0;
+  const cost = labor.pay + matTotal;
+  const profit = v - cost;
+  const margin = v > 0 ? profit / v * 100 : 0;
+  const eH = Number(estH) || 0, eL = Number(estL) || 0, eM = Number(estM) || 0;
+  const estCost = eL + eM;
+  const estMargin = v > 0 ? (v - estCost) / v * 100 : 0;
+  const hasBid = eH > 0 || eL > 0 || eM > 0;
+  const addLine = () => setMaterials([...materials, { desc: "", amount: 0 }]);
+  const setLine = (i, patch) => setMaterials(materials.map((m, idx) => idx === i ? { ...m, ...patch } : m));
+  const rmLine = (i) => setMaterials(materials.filter((_, idx) => idx !== i));
+  const save = async () => {
+    setBusy(true);
+    setErr("");
+    try {
+      await post2({ action: "save-job", job: { id: job.id, contractValue: v, materials: materials.map((m) => ({ desc: m.desc, amount: Number(m.amount) || 0 })), estHours: eH, estLabor: eL, estMaterials: eM } });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 1600);
+      await onChange();
+    } catch (e) {
+      setErr(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const status = job.status || "active";
+  const mInput = `bg-surface-container border-b ${hairline} p-2 text-on-surface focus:border-primary focus:outline-none w-full min-w-0`;
+  const line = `flex flex-wrap items-center justify-between gap-x-4 gap-y-2 py-3 border-b ${hairline}`;
+  const pid = `p-${job.id}`;
+  const over = (n) => n > 0 ? "text-error" : "text-[#5ec26a]";
+  return /* @__PURE__ */ jsxs("section", { "aria-label": job.name, children: [
+    /* @__PURE__ */ jsxs("div", { className: `flex flex-wrap items-baseline justify-between gap-3 pb-2 border-b-2 ${hairline}`, children: [
+      /* @__PURE__ */ jsxs("h4", { className: "font-headline-md text-headline-md uppercase break-words min-w-0", children: [
+        job.customer || job.name,
+        job.workType ? `, ${job.workType}` : ""
+      ] }),
+      /* @__PURE__ */ jsx("span", { className: "text-xs font-label-bold uppercase tracking-widest text-on-surface-variant", children: JOB_STATUS_LABEL[status] })
+    ] }),
+    /* @__PURE__ */ jsxs("div", { className: line, children: [
+      /* @__PURE__ */ jsxs("label", { htmlFor: `${pid}-value`, className: "text-on-surface", children: [
+        "Contract value ",
+        /* @__PURE__ */ jsx("span", { className: "text-on-surface-variant text-xs", children: "(approved estimate)" })
+      ] }),
+      /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-1 w-40", children: [
+        /* @__PURE__ */ jsx("span", { className: "text-on-surface-variant", children: "$" }),
+        /* @__PURE__ */ jsx("input", { id: `${pid}-value`, className: mInput, inputMode: "decimal", value, onChange: (e) => setValue(e.target.value.replace(/[^0-9.]/g, "")), placeholder: "0" })
+      ] })
+    ] }),
+    /* @__PURE__ */ jsxs("div", { className: `py-3 border-b ${hairline}`, children: [
+      /* @__PURE__ */ jsxs("div", { className: "text-on-surface mb-2", children: [
+        "Your bid ",
+        /* @__PURE__ */ jsx("span", { className: "text-on-surface-variant text-xs", children: "(what you estimated, optional)" })
+      ] }),
+      /* @__PURE__ */ jsxs("div", { className: "grid grid-cols-3 gap-2", children: [
+        /* @__PURE__ */ jsxs("div", { children: [
+          /* @__PURE__ */ jsx("label", { htmlFor: `${pid}-eh`, className: "block text-on-surface-variant text-xs mb-1", children: "Est. hours" }),
+          /* @__PURE__ */ jsx("input", { id: `${pid}-eh`, className: mInput, inputMode: "decimal", value: estH, onChange: (e) => setEstH(e.target.value.replace(/[^0-9.]/g, "")), placeholder: "0" })
+        ] }),
+        /* @__PURE__ */ jsxs("div", { children: [
+          /* @__PURE__ */ jsx("label", { htmlFor: `${pid}-el`, className: "block text-on-surface-variant text-xs mb-1", children: "Est. labor $" }),
+          /* @__PURE__ */ jsx("input", { id: `${pid}-el`, className: mInput, inputMode: "decimal", value: estL, onChange: (e) => setEstL(e.target.value.replace(/[^0-9.]/g, "")), placeholder: "0" })
+        ] }),
+        /* @__PURE__ */ jsxs("div", { children: [
+          /* @__PURE__ */ jsx("label", { htmlFor: `${pid}-em`, className: "block text-on-surface-variant text-xs mb-1", children: "Est. materials $" }),
+          /* @__PURE__ */ jsx("input", { id: `${pid}-em`, className: mInput, inputMode: "decimal", value: estM, onChange: (e) => setEstM(e.target.value.replace(/[^0-9.]/g, "")), placeholder: "0" })
+        ] })
+      ] })
+    ] }),
+    /* @__PURE__ */ jsxs("div", { className: line, children: [
+      /* @__PURE__ */ jsxs("span", { className: "text-on-surface", children: [
+        "Labor ",
+        /* @__PURE__ */ jsxs("span", { className: "text-primary text-xs", children: [
+          labor.hours.toFixed(1),
+          " hrs, from the time clock"
+        ] })
+      ] }),
+      /* @__PURE__ */ jsx("span", { className: "font-label-bold", children: money0(labor.pay) })
+    ] }),
+    /* @__PURE__ */ jsxs("div", { className: `py-3 border-b ${hairline}`, children: [
+      /* @__PURE__ */ jsxs("div", { className: "flex items-center justify-between mb-2", children: [
+        /* @__PURE__ */ jsxs("span", { className: "text-on-surface", children: [
+          "Materials ",
+          /* @__PURE__ */ jsx("span", { className: "text-on-surface-variant text-xs", children: "(itemized)" })
+        ] }),
+        /* @__PURE__ */ jsx("span", { className: "font-label-bold", children: money0(matTotal) })
+      ] }),
+      /* @__PURE__ */ jsxs("div", { className: "space-y-2", children: [
+        materials.map((m, i) => /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-2", children: [
+          /* @__PURE__ */ jsx("input", { "aria-label": `Material ${i + 1} description`, className: `${mInput} flex-1`, value: m.desc, onChange: (e) => setLine(i, { desc: e.target.value }), placeholder: "e.g. Block & stone" }),
+          /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-1 w-28 shrink-0", children: [
+            /* @__PURE__ */ jsx("span", { className: "text-on-surface-variant", children: "$" }),
+            /* @__PURE__ */ jsx("input", { "aria-label": `Material ${i + 1} cost`, className: mInput, inputMode: "decimal", value: m.amount || "", onChange: (e) => setLine(i, { amount: Number(e.target.value.replace(/[^0-9.]/g, "")) || 0 }), placeholder: "0" })
+          ] }),
+          /* @__PURE__ */ jsx("button", { type: "button", onClick: () => rmLine(i), className: "text-on-surface-variant hover:text-error text-sm px-2 py-1", "aria-label": `Remove material ${i + 1}`, children: "✕" })
+        ] }, i)),
+        /* @__PURE__ */ jsx("button", { type: "button", onClick: addLine, className: "text-primary text-sm font-label-bold hover:underline", children: "+ Add line item" })
+      ] })
+    ] }),
+    /* @__PURE__ */ jsxs("div", { className: line, children: [
+      /* @__PURE__ */ jsxs("span", { className: "text-on-surface", children: [
+        "Total cost ",
+        /* @__PURE__ */ jsx("span", { className: "text-on-surface-variant text-xs", children: "(labor + materials)" })
+      ] }),
+      /* @__PURE__ */ jsx("span", { className: "font-label-bold", children: money0(cost) })
+    ] }),
+    hasBid && /* @__PURE__ */ jsxs("div", { className: `py-3 border-b ${hairline} text-sm space-y-1`, children: [
+      /* @__PURE__ */ jsx("div", { className: "text-on-surface-variant text-xs uppercase tracking-widest font-label-bold", children: "Bid against actual" }),
+      eH > 0 && /* @__PURE__ */ jsxs("p", { children: [
+        "Hours: bid ",
+        eH.toFixed(0),
+        ", actual ",
+        labor.hours.toFixed(1),
+        ", ",
+        /* @__PURE__ */ jsxs("span", { className: `font-label-bold ${over(labor.hours - eH)}`, children: [
+          labor.hours - eH > 0 ? "over by" : "under by",
+          " ",
+          Math.abs(labor.hours - eH).toFixed(1)
+        ] })
+      ] }),
+      /* @__PURE__ */ jsxs("p", { children: [
+        "Cost: bid ",
+        money0(estCost),
+        ", actual ",
+        money0(cost),
+        ", ",
+        /* @__PURE__ */ jsxs("span", { className: `font-label-bold ${over(cost - estCost)}`, children: [
+          cost - estCost > 0 ? "over by" : "under by",
+          " ",
+          money0(Math.abs(cost - estCost))
+        ] })
+      ] }),
+      v > 0 && /* @__PURE__ */ jsxs("p", { children: [
+        "Margin: bid ",
+        estMargin.toFixed(0),
+        "%, actual ",
+        margin.toFixed(0),
+        "%, ",
+        /* @__PURE__ */ jsxs("span", { className: `font-label-bold ${over(estMargin - margin)}`, children: [
+          margin - estMargin >= 0 ? "up" : "down",
+          " ",
+          Math.abs(margin - estMargin).toFixed(0),
+          " points"
+        ] })
+      ] })
+    ] }),
+    /* @__PURE__ */ jsxs("div", { className: "flex flex-wrap items-end justify-between gap-4 pt-4", children: [
+      /* @__PURE__ */ jsx("p", { className: "text-lg", children: v > 0 ? /* @__PURE__ */ jsxs(Fragment, { children: [
+        /* @__PURE__ */ jsx("strong", { className: `font-display-lg text-3xl ${profit >= 0 ? "text-[#5ec26a]" : "text-error"}`, children: money0(profit) }),
+        " ",
+        /* @__PURE__ */ jsx("span", { className: "text-on-surface-variant", children: "profit at" }),
+        " ",
+        /* @__PURE__ */ jsxs("strong", { className: "font-display-lg text-3xl text-primary", children: [
+          margin.toFixed(0),
+          "%"
+        ] }),
+        " ",
+        /* @__PURE__ */ jsx("span", { className: "text-on-surface-variant", children: "margin" })
+      ] }) : /* @__PURE__ */ jsx("span", { className: "text-on-surface-variant text-sm", children: "Add a contract value to see profit." }) }),
+      /* @__PURE__ */ jsx("button", { className: btn, disabled: busy, onClick: save, children: busy ? "Saving…" : saved ? "Saved" : "Save" })
+    ] }),
+    err && /* @__PURE__ */ jsx("p", { role: "alert", className: `${errorText} mt-2`, children: err })
+  ] });
+}
+const blankCrew = () => ({ name: "", rate: "", pin: "", phone: "", effectiveFrom: todayStr() });
+function crewFormError(f) {
+  if (!f.name.trim()) return "Enter a name.";
+  if (f.rate.trim() === "" || !(Number(f.rate) >= 0)) return "Enter an hourly rate.";
+  if (!/^\d{4}$/.test(f.pin)) return "PIN must be 4 digits.";
+  const digits = f.phone.replace(/\D/g, "").replace(/^1/, "");
+  if (f.phone.trim() && digits.length !== 10) return "The cell number needs all 10 digits.";
+  return "";
+}
+function CrewFields({ f, setF, idPrefix, autoFocus, currentRate, smsOn }) {
+  const rateChanged = currentRate !== void 0 && f.rate.trim() !== "" && Number(f.rate) !== currentRate;
+  return /* @__PURE__ */ jsxs(Fragment, { children: [
+    /* @__PURE__ */ jsxs("div", { children: [
+      /* @__PURE__ */ jsx("label", { className: label, htmlFor: `${idPrefix}-name`, children: "Name" }),
+      /* @__PURE__ */ jsx("input", { id: `${idPrefix}-name`, className: input, autoFocus, autoComplete: "off", value: f.name, onChange: (e) => setF({ ...f, name: e.target.value }) })
+    ] }),
+    /* @__PURE__ */ jsxs("div", { children: [
+      /* @__PURE__ */ jsx("label", { className: label, htmlFor: `${idPrefix}-rate`, children: "Hourly Rate ($)" }),
+      /* @__PURE__ */ jsx("input", { id: `${idPrefix}-rate`, className: input, inputMode: "decimal", autoComplete: "off", value: f.rate, onChange: (e) => setF({ ...f, rate: e.target.value.replace(/[^0-9.]/g, "") }), placeholder: "25" })
+    ] }),
+    rateChanged && /* @__PURE__ */ jsxs("div", { children: [
+      /* @__PURE__ */ jsx("label", { className: label, htmlFor: `${idPrefix}-from`, children: "New Rate Starts" }),
+      /* @__PURE__ */ jsx("input", { id: `${idPrefix}-from`, type: "date", className: input, value: f.effectiveFrom, onChange: (e) => setF({ ...f, effectiveFrom: e.target.value }) }),
+      /* @__PURE__ */ jsx("p", { className: "text-on-surface-variant text-xs mt-1", children: f.effectiveFrom > todayStr() ? `Shifts keep paying ${money(currentRate)} until that day, then ${money(Number(f.rate))}.` : `Shifts already logged on or after this day move to ${money(Number(f.rate))}. Weeks you've locked stay as paid.` })
+    ] }),
+    /* @__PURE__ */ jsxs("div", { children: [
+      /* @__PURE__ */ jsx("label", { className: label, htmlFor: `${idPrefix}-pin`, children: "4-Digit PIN" }),
+      /* @__PURE__ */ jsx("input", { id: `${idPrefix}-pin`, className: `${input} tracking-[0.4em]`, inputMode: "numeric", autoComplete: "off", maxLength: 4, value: f.pin, onChange: (e) => setF({ ...f, pin: e.target.value.replace(/\D/g, "") }), placeholder: "0000" })
+    ] }),
+    /* @__PURE__ */ jsxs("div", { children: [
+      /* @__PURE__ */ jsx("label", { className: label, htmlFor: `${idPrefix}-phone`, children: "Cell Number (optional)" }),
+      /* @__PURE__ */ jsx("input", { id: `${idPrefix}-phone`, className: input, type: "tel", inputMode: "tel", autoComplete: "off", value: f.phone, onChange: (e) => setF({ ...f, phone: e.target.value }), placeholder: "(330) 555-0100" }),
+      /* @__PURE__ */ jsx("p", { className: "text-on-surface-variant text-xs mt-1", children: smsOn ? "Used only to text a reminder when they forget to clock out. Get their OK before adding it." : "For clock-out reminder texts. Texting is not connected yet, so nothing is sent." })
+    ] })
+  ] });
+}
+function CrewTab({ employees, entries, smsOn, post: post2, onChange }) {
+  const [f, setF] = useState(blankCrew);
+  const [err, setErr] = useState("");
+  const [editId, setEditId] = useState("");
+  const [ef, setEf] = useState(blankCrew);
+  const [editErr, setEditErr] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState(null);
+  const [rowErr, setRowErr] = useState(null);
+  const [copied, setCopied] = useState("");
+  const copy = async (id, text) => {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+    }
+    setCopied(id);
+    setTimeout(() => setCopied(""), 1500);
+  };
+  const shiftCount = useMemo(() => {
+    const m = /* @__PURE__ */ new Map();
+    for (const e of entries) if (e.employeeId) m.set(e.employeeId, (m.get(e.employeeId) || 0) + 1);
+    return m;
+  }, [entries]);
+  const active = employees.filter((e) => e.active);
+  const former = employees.filter((e) => !e.active);
+  const add = async (e) => {
+    e.preventDefault();
+    const problem = crewFormError(f);
+    setErr(problem);
+    if (problem) return;
+    try {
+      await post2({ action: "save-employee", employee: { name: f.name, rate: Number(f.rate), pin: f.pin, phone: f.phone } });
+      setF(blankCrew());
+      await onChange();
+    } catch (e2) {
+      setErr(e2.message);
+    }
+  };
+  const startEdit = (e) => {
+    setEditId(e.id);
+    setEf({ name: e.name, rate: String(e.rate), pin: e.pin, phone: e.phone ? fmtPhone(e.phone) : "", effectiveFrom: todayStr() });
+    setEditErr("");
+    setRowErr(null);
+  };
+  const saveEdit = async (e) => {
+    e.preventDefault();
+    const problem = crewFormError(ef);
+    setEditErr(problem);
+    if (problem) return;
+    setBusy(true);
+    try {
+      const d = await post2({ action: "save-employee", employee: { id: editId, name: ef.name, rate: Number(ef.rate), pin: ef.pin, phone: ef.phone, effectiveFrom: ef.effectiveFrom } });
+      await onChange();
+      const parts = ["Changes saved."];
+      if (d.rerated) parts.push(`${d.rerated} shift${d.rerated === 1 ? "" : "s"} moved to the new rate.`);
+      if (d.lockedSkipped) parts.push(`${d.lockedSkipped} in a locked week stayed as paid.`);
+      setSaved({ id: editId, note: parts.join(" ") });
+      setTimeout(() => setSaved(null), 6e3);
+      setEditId("");
+    } catch (e2) {
+      setEditErr(e2.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const act = async (id, body) => {
+    setRowErr(null);
+    try {
+      await post2(body);
+      if (editId === id) setEditId("");
+      await onChange();
+    } catch (e2) {
+      setRowErr({ id, note: e2.message });
+    }
+  };
+  const setActive = (e, on) => {
+    if (!on && !confirm(`Take ${e.name} off the crew list? They won't be able to clock in. Their hours stay on file and you can bring them back any time.`)) return;
+    act(e.id, { action: "set-employee-active", id: e.id, active: on });
+  };
+  const remove = (e) => {
+    if (confirm(`Remove ${e.name} for good? This is for someone added by mistake.`)) act(e.id, { action: "delete-employee", id: e.id });
+  };
+  const cancelRaise = (e) => act(e.id, { action: "save-employee", employee: { id: e.id, cancelNextRate: true } });
+  return /* @__PURE__ */ jsxs("div", { className: "grid lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)] gap-x-12 gap-y-12", children: [
+    /* @__PURE__ */ jsxs("form", { onSubmit: add, className: "space-y-5 h-fit", children: [
+      /* @__PURE__ */ jsx(SectionHead, { title: "Add Crew Member" }),
+      /* @__PURE__ */ jsx(CrewFields, { f, setF, idPrefix: "crew-add", smsOn }),
+      err && /* @__PURE__ */ jsx("p", { role: "alert", className: errorText, children: err }),
+      /* @__PURE__ */ jsx("button", { className: btn, children: "Add Member" })
+    ] }),
+    /* @__PURE__ */ jsxs("div", { className: "min-w-0", children: [
+      /* @__PURE__ */ jsx(SectionHead, { title: `On the Crew (${active.length})` }),
+      active.length === 0 && /* @__PURE__ */ jsx("p", { className: "text-on-surface-variant", children: "No crew yet. Add your first person." }),
+      /* @__PURE__ */ jsx("ul", { children: active.map((e) => {
+        const link = `${typeof window !== "undefined" ? window.location.origin : ""}/employee?u=${e.id}`;
+        if (editId === e.id) {
+          return /* @__PURE__ */ jsx("li", { className: `py-5 border-b ${hairline}`, children: /* @__PURE__ */ jsxs("form", { onSubmit: saveEdit, className: "space-y-4 max-w-md", children: [
+            /* @__PURE__ */ jsxs("h4", { className: "font-headline-md text-headline-md uppercase", children: [
+              "Edit ",
+              e.name
+            ] }),
+            /* @__PURE__ */ jsx(CrewFields, { f: ef, setF: setEf, idPrefix: `crew-edit-${e.id}`, autoFocus: true, currentRate: e.rate, smsOn }),
+            editErr && /* @__PURE__ */ jsx("p", { role: "alert", className: errorText, children: editErr }),
+            /* @__PURE__ */ jsxs("div", { className: "flex gap-3", children: [
+              /* @__PURE__ */ jsx("button", { className: btn, disabled: busy, children: busy ? "Saving…" : "Save Changes" }),
+              /* @__PURE__ */ jsx("button", { type: "button", className: btnGhost, disabled: busy, onClick: () => setEditId(""), children: "Cancel" })
+            ] }),
+            /* @__PURE__ */ jsx("p", { className: "text-on-surface-variant/70 text-xs", children: "Their login link stays the same. A new PIN signs them out until they enter it." })
+          ] }) }, e.id);
+        }
+        return /* @__PURE__ */ jsxs("li", { className: `py-4 border-b ${hairline} space-y-2`, children: [
+          /* @__PURE__ */ jsxs("div", { className: "flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1", children: [
+            /* @__PURE__ */ jsxs("div", { className: "min-w-0", children: [
+              /* @__PURE__ */ jsx("div", { className: "font-headline-md text-headline-md break-words", children: e.name }),
+              /* @__PURE__ */ jsxs("div", { className: "text-on-surface-variant text-sm", children: [
+                money(e.rate),
+                " an hour, PIN ",
+                e.pin,
+                e.phone ? `, ${fmtPhone(e.phone)}` : ""
+              ] })
+            ] }),
+            /* @__PURE__ */ jsxs("div", { className: "flex flex-wrap items-baseline gap-4", children: [
+              /* @__PURE__ */ jsx("button", { className: btnGhost, onClick: () => startEdit(e), children: "Edit" }),
+              /* @__PURE__ */ jsx("button", { className: textLink, onClick: () => setActive(e, false), children: "No longer on crew" })
+            ] })
+          ] }),
+          e.nextRate && /* @__PURE__ */ jsxs("p", { className: "text-on-surface text-sm", children: [
+            "Goes to ",
+            money(e.nextRate.rate),
+            " an hour on ",
+            fmtDate(e.nextRate.from),
+            ". ",
+            /* @__PURE__ */ jsx("button", { className: textLink, onClick: () => cancelRaise(e), children: "Cancel this change" })
+          ] }),
+          saved?.id === e.id && /* @__PURE__ */ jsx("p", { role: "status", className: "text-primary text-sm font-label-bold", children: saved.note }),
+          rowErr?.id === e.id && /* @__PURE__ */ jsx("p", { role: "alert", className: errorText, children: rowErr.note }),
+          /* @__PURE__ */ jsxs("div", { className: `flex items-center gap-2 border ${hairline} p-2`, children: [
+            /* @__PURE__ */ jsx("input", { readOnly: true, "aria-label": `Login link for ${e.name}`, value: link, onFocus: (ev) => ev.currentTarget.select(), className: "flex-1 min-w-0 bg-transparent text-on-surface-variant text-xs outline-none" }),
+            /* @__PURE__ */ jsx("button", { type: "button", onClick: () => copy(e.id, link), className: "shrink-0 bg-primary-container text-on-primary-container font-label-bold text-xs uppercase px-3 py-1.5 metallic-gradient beveled-edge", children: copied === e.id ? "Copied" : "Copy link" })
+          ] }),
+          /* @__PURE__ */ jsxs("p", { className: "text-on-surface-variant/70 text-xs", children: [
+            "Text this link to ",
+            e.name.split(" ")[0],
+            ". It opens straight to their name, and they just enter PIN ",
+            e.pin,
+            "."
+          ] })
+        ] }, e.id);
+      }) }),
+      former.length > 0 && /* @__PURE__ */ jsxs("div", { className: "mt-12", children: [
+        /* @__PURE__ */ jsx(SectionHead, { title: `No Longer on Crew (${former.length})`, note: "They can't clock in, and their hours stay in your records and reports." }),
+        /* @__PURE__ */ jsx("ul", { children: former.map((e) => /* @__PURE__ */ jsxs("li", { className: `py-3 border-b ${hairline} flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1`, children: [
+          /* @__PURE__ */ jsxs("span", { className: "min-w-0 break-words", children: [
+            /* @__PURE__ */ jsx("span", { className: "font-label-bold", children: e.name }),
+            " ",
+            /* @__PURE__ */ jsxs("span", { className: "text-on-surface-variant text-sm", children: [
+              money(e.rate),
+              " an hour, ",
+              (shiftCount.get(e.id) || 0).toLocaleString("en-US"),
+              " shifts on file"
+            ] })
+          ] }),
+          /* @__PURE__ */ jsxs("span", { className: "flex flex-wrap items-baseline gap-4", children: [
+            /* @__PURE__ */ jsx("button", { className: textLink, onClick: () => setActive(e, true), children: "Bring back" }),
+            !shiftCount.get(e.id) && /* @__PURE__ */ jsx("button", { className: "text-on-surface-variant hover:text-error text-sm underline underline-offset-4", onClick: () => remove(e), children: "Remove for good" })
+          ] }),
+          rowErr?.id === e.id && /* @__PURE__ */ jsx("p", { role: "alert", className: `${errorText} basis-full`, children: rowErr.note })
+        ] }, e.id)) })
+      ] })
+    ] })
+  ] });
+}
+function JobsTab({ jobs, entries, post: post2, onChange }) {
+  const blank = { id: "", customer: "", workType: "", address: "", status: "active" };
+  const [f, setF] = useState(blank);
+  const [err, setErr] = useState("");
+  const [rowErr, setRowErr] = useState(null);
+  const formRef = useRef(null);
+  const save = async (e) => {
+    e.preventDefault();
+    setErr("");
+    try {
+      await post2({ action: "save-job", job: { id: f.id || void 0, customer: f.customer, workType: f.workType, address: f.address, status: f.status } });
+      setF(blank);
+      await onChange();
+    } catch (e2) {
+      setErr(e2.message);
+    }
+  };
+  const editJob = (j) => {
+    setF({ id: j.id, customer: j.customer || (j.workType ? "" : j.name || ""), workType: j.workType || "", address: j.address || "", status: j.status || "active" });
+    formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    formRef.current?.querySelector("input")?.focus({ preventScroll: true });
+  };
+  const act = async (id, body) => {
+    setRowErr(null);
+    try {
+      await post2(body);
+      await onChange();
+    } catch (e2) {
+      setRowErr({ id, note: e2.message });
+    }
+  };
+  const setStatus = (j, status) => act(j.id, { action: "save-job", job: { id: j.id, status } });
+  const del = (j) => {
+    if (!confirm("Remove this job? Its logged hours stay in your records.")) return;
+    if (f.id === j.id) setF(blank);
+    act(j.id, { action: "delete-job", id: j.id });
+  };
+  const order = { active: 0, future: 1, finished: 2 };
+  const sortedJobs = [...jobs].sort((a, b) => order[a.status || "active"] - order[b.status || "active"]);
+  const loose = useMemo(() => {
+    const m = /* @__PURE__ */ new Map();
+    for (const e of entries) {
+      if (e.jobId || !e.jobName || jobs.some((j) => j.name === e.jobName)) continue;
+      const c = m.get(e.jobName) || { hours: 0, pay: 0, shifts: 0 };
+      m.set(e.jobName, { hours: c.hours + e.hours, pay: c.pay + e.pay, shifts: c.shifts + 1 });
+    }
+    return Array.from(m.entries()).sort((a, b) => b[1].hours - a[1].hours);
+  }, [entries, jobs]);
+  return /* @__PURE__ */ jsxs("div", { className: "grid lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)] gap-x-12 gap-y-12", children: [
+    /* @__PURE__ */ jsxs("form", { ref: formRef, onSubmit: save, className: "space-y-5 h-fit scroll-mt-32", children: [
+      /* @__PURE__ */ jsx(SectionHead, { title: f.id ? "Edit Job" : "Add a Job", note: "Only Active jobs show in the crew's dropdown. Future and Finished jobs are hidden from them, so their list stays short." }),
+      /* @__PURE__ */ jsxs("div", { children: [
+        /* @__PURE__ */ jsx("label", { className: label, htmlFor: "job-customer", children: "Customer" }),
+        /* @__PURE__ */ jsx("input", { id: "job-customer", className: input, value: f.customer, onChange: (e) => setF({ ...f, customer: e.target.value }), placeholder: "e.g. Chick-fil-A or Mr. Smith" })
+      ] }),
+      /* @__PURE__ */ jsxs("div", { children: [
+        /* @__PURE__ */ jsx("label", { className: label, htmlFor: "job-type", children: "Type of Work" }),
+        /* @__PURE__ */ jsx("input", { id: "job-type", className: input, value: f.workType, onChange: (e) => setF({ ...f, workType: e.target.value }), placeholder: "e.g. Retaining Wall" })
+      ] }),
+      /* @__PURE__ */ jsxs("div", { children: [
+        /* @__PURE__ */ jsx("label", { className: label, htmlFor: "job-addr", children: "Job Site Address" }),
+        /* @__PURE__ */ jsx("input", { id: "job-addr", className: input, value: f.address, onChange: (e) => setF({ ...f, address: e.target.value }), placeholder: "123 Main St, Wadsworth, OH" })
+      ] }),
+      /* @__PURE__ */ jsxs("div", { children: [
+        /* @__PURE__ */ jsx("label", { className: label, htmlFor: "job-status", children: "Status" }),
+        /* @__PURE__ */ jsxs("select", { id: "job-status", className: input, value: f.status, onChange: (e) => setF({ ...f, status: e.target.value }), children: [
+          /* @__PURE__ */ jsx("option", { value: "active", children: "Active (crew can pick it)" }),
+          /* @__PURE__ */ jsx("option", { value: "future", children: "Future (hidden from crew)" }),
+          /* @__PURE__ */ jsx("option", { value: "finished", children: "Finished (hidden from crew)" })
+        ] })
+      ] }),
+      f.id && /* @__PURE__ */ jsx("p", { className: "text-on-surface-variant text-xs", children: "Renaming a job keeps every hour already logged against it." }),
+      err && /* @__PURE__ */ jsx("p", { role: "alert", className: errorText, children: err }),
+      /* @__PURE__ */ jsxs("div", { className: "flex gap-3", children: [
+        /* @__PURE__ */ jsx("button", { className: btn, children: f.id ? "Save Changes" : "Add Job" }),
+        f.id && /* @__PURE__ */ jsx("button", { type: "button", className: btnGhost, onClick: () => setF(blank), children: "Cancel" })
+      ] })
+    ] }),
+    /* @__PURE__ */ jsxs("div", { className: "min-w-0 space-y-12", children: [
+      /* @__PURE__ */ jsxs("div", { children: [
+        /* @__PURE__ */ jsx(SectionHead, { title: `Jobs (${jobs.length})` }),
+        jobs.length === 0 && /* @__PURE__ */ jsx("p", { className: "text-on-surface-variant", children: "No jobs yet." }),
+        /* @__PURE__ */ jsx("ul", { children: sortedJobs.map((j) => {
+          const s = laborForJob(j, entries);
+          const status = j.status || "active";
+          return /* @__PURE__ */ jsxs("li", { className: `py-4 border-b ${hairline} ${status !== "active" ? "opacity-75" : ""}`, children: [
+            /* @__PURE__ */ jsxs("div", { className: "flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1", children: [
+              /* @__PURE__ */ jsxs("div", { className: "min-w-0", children: [
+                /* @__PURE__ */ jsxs("div", { className: "font-label-bold break-words", children: [
+                  j.customer || j.name,
+                  j.workType ? /* @__PURE__ */ jsxs("span", { className: "text-on-surface-variant font-normal", children: [
+                    ", ",
+                    j.workType
+                  ] }) : null
+                ] }),
+                /* @__PURE__ */ jsx("div", { className: "text-on-surface-variant text-sm break-words", children: j.address || "No address saved" })
+              ] }),
+              /* @__PURE__ */ jsxs("div", { className: "flex flex-wrap items-baseline gap-4", children: [
+                /* @__PURE__ */ jsx("button", { className: btnGhost, onClick: () => editJob(j), children: "Edit" }),
+                /* @__PURE__ */ jsx("button", { className: "text-on-surface-variant hover:text-error text-sm underline underline-offset-4", onClick: () => del(j), children: "Remove" })
+              ] })
+            ] }),
+            /* @__PURE__ */ jsxs("div", { className: "flex flex-wrap items-center gap-x-5 gap-y-2 mt-2 text-sm", children: [
+              /* @__PURE__ */ jsxs("label", { className: "flex items-center gap-2 text-on-surface-variant", children: [
+                /* @__PURE__ */ jsx("span", { className: "text-xs uppercase tracking-wider font-label-bold", children: "Status" }),
+                /* @__PURE__ */ jsx("select", { "aria-label": `Status for ${j.name}`, className: `bg-surface-container border ${hairline} text-on-surface text-sm px-2 py-1 focus:border-primary focus:outline-none`, value: status, onChange: (e) => setStatus(j, e.target.value), children: Object.keys(JOB_STATUS_LABEL).map((k) => /* @__PURE__ */ jsx("option", { value: k, children: JOB_STATUS_LABEL[k] }, k)) })
+              ] }),
+              /* @__PURE__ */ jsxs("span", { className: "text-on-surface-variant", children: [
+                /* @__PURE__ */ jsxs("span", { className: "text-primary font-label-bold", children: [
+                  hrs(s.hours),
+                  " man-hours"
+                ] }),
+                ", ",
+                money(s.pay),
+                " labor to date"
+              ] })
+            ] }),
+            rowErr?.id === j.id && /* @__PURE__ */ jsx("p", { role: "alert", className: `${errorText} mt-2`, children: rowErr.note })
+          ] }, j.id);
+        }) }),
+        /* @__PURE__ */ jsx("p", { className: "text-on-surface-variant/70 text-xs pt-3", children: "Labor shown is straight-time hours logged against each job, totaled across all time." })
+      ] }),
+      loose.length > 0 && /* @__PURE__ */ jsxs("div", { children: [
+        /* @__PURE__ */ jsx(SectionHead, { title: "Hours Not Tied to a Job", note: "These were logged under a job name that has since changed or been removed, so they are not counting toward any job. Pick the job each one belongs to." }),
+        /* @__PURE__ */ jsx("ul", { children: loose.map(([name, v]) => /* @__PURE__ */ jsx(LooseRow, { name, v, jobs: sortedJobs, post: post2, onChange }, name)) })
+      ] })
+    ] })
+  ] });
+}
+function LooseRow({ name, v, jobs, post: post2, onChange }) {
+  const [jobId, setJobId] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const [done, setDone] = useState("");
+  const link = async () => {
+    setErr("");
+    setBusy(true);
+    try {
+      const d = await post2({ action: "link-job-name", jobName: name, jobId });
+      setDone(`${d.linked} shift${d.linked === 1 ? "" : "s"} tied to that job.`);
+      await onChange();
+    } catch (e2) {
+      setErr(e2.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return /* @__PURE__ */ jsxs("li", { className: `py-3 border-b ${hairline} flex flex-wrap items-center gap-x-4 gap-y-2`, children: [
+    /* @__PURE__ */ jsxs("span", { className: "min-w-0 flex-1 break-words", children: [
+      /* @__PURE__ */ jsx("span", { className: "font-label-bold", children: name }),
+      " ",
+      /* @__PURE__ */ jsxs("span", { className: "text-on-surface-variant text-sm", children: [
+        v.shifts,
+        " shift",
+        v.shifts === 1 ? "" : "s",
+        ", ",
+        hrs(v.hours),
+        " hrs, ",
+        money(v.pay)
+      ] })
+    ] }),
+    /* @__PURE__ */ jsxs("select", { "aria-label": `Job for hours logged as ${name}`, className: `bg-surface-container border ${hairline} text-on-surface text-sm px-2 py-2 max-w-full focus:border-primary focus:outline-none`, value: jobId, onChange: (e) => setJobId(e.target.value), children: [
+      /* @__PURE__ */ jsx("option", { value: "", children: "Pick the job…" }),
+      jobs.map((j) => /* @__PURE__ */ jsx("option", { value: j.id, children: j.name }, j.id))
+    ] }),
+    /* @__PURE__ */ jsx("button", { className: textLink, disabled: !jobId || busy, onClick: link, children: busy ? "Saving…" : "Tie to this job" }),
+    err && /* @__PURE__ */ jsx("p", { role: "alert", className: `${errorText} basis-full`, children: err }),
+    done && /* @__PURE__ */ jsx("p", { role: "status", className: `${okText} basis-full`, children: done })
+  ] });
+}
+const NotConnected = ({ what }) => /* @__PURE__ */ jsxs("p", { className: "text-on-surface-variant text-sm", children: [
+  what,
+  " is not connected to this site yet, so nothing is sent. Your choices here are saved and start working the day it is connected. Adam Loomis Marketing sets that up."
+] });
+const Said = ({ note }) => /* @__PURE__ */ jsxs(Fragment, { children: [
+  note.ok && /* @__PURE__ */ jsx("p", { role: "status", className: okText, children: note.ok }),
+  note.err && /* @__PURE__ */ jsx("p", { role: "alert", className: errorText, children: note.err })
+] });
+function SettingsTab({ settings, connected, backup, weakPasscode, post: post2, onChange, onToken, onSignOut }) {
+  const run = async (set, fn) => {
+    set({});
+    try {
+      set({ ok: await fn() });
+    } catch (e) {
+      set({ err: e.message });
+    }
+  };
+  const [pass, setPass] = useState("");
+  const [passNote, setPassNote] = useState({});
+  const savePass = (e) => {
+    e.preventDefault();
+    if (pass.length < 6) return setPassNote({ err: "Use at least 6 characters." });
+    run(setPassNote, async () => {
+      const d = await post2({ action: "set-admin-passcode", newPasscode: pass });
+      onToken(d.token);
+      setPass("");
+      await onChange();
+      return "Passcode updated. Any other phone or computer that was signed in has been signed out.";
+    });
+  };
+  const [wd, setWd] = useState(String(settings.weekStartDay));
+  const [weekNote, setWeekNote] = useState({});
+  const saveWeek = (e) => {
+    e.preventDefault();
+    run(setWeekNote, async () => {
+      await post2({ action: "set-week-start", weekStartDay: Number(wd) });
+      await onChange();
+      return `Workweek now starts ${DAYS[Number(wd)]}.`;
+    });
+  };
+  const [locNote, setLocNote] = useState({});
+  const saveLoc = (on) => run(setLocNote, async () => {
+    await post2({ action: "save-settings", locationStamp: on });
+    await onChange();
+    return on ? "On. Tell the crew before their next shift. Their phone will ask permission the first time." : "Off. No location is saved.";
+  });
+  const [mail, setMail] = useState(settings.payrollEmail);
+  const [mailNote, setMailNote] = useState({});
+  const saveMail = (e) => {
+    e.preventDefault();
+    run(setMailNote, async () => {
+      await post2({ action: "save-settings", payrollEmail: mail });
+      await onChange();
+      return mail.on ? `Saved. The summary goes to ${mail.to} every ${DAYS[mail.day]} morning.` : "Saved. The weekly email is off.";
+    });
+  };
+  const sendNow = () => run(setMailNote, async () => {
+    await post2({ action: "save-settings", payrollEmail: mail });
+    const d = await post2({ action: "send-payroll-email" });
+    return `Sent last week's summary to ${d.to}.`;
+  });
+  const [rem, setRem] = useState(settings.reminders);
+  const [remNote, setRemNote] = useState({});
+  const saveRem = (e) => {
+    e.preventDefault();
+    run(setRemNote, async () => {
+      await post2({ action: "save-settings", reminders: rem });
+      await onChange();
+      return rem.on ? `Saved. Anyone on the clock longer than ${rem.afterHours} hours gets one text.` : "Saved. Reminder texts are off.";
+    });
+  };
+  const [backNote, setBackNote] = useState({});
+  const backupNow = () => run(setBackNote, async () => {
+    const d = await post2({ action: "backup-now" });
+    await onChange();
+    return `Backed up ${d.backup.entries} shifts just now.`;
+  });
+  const downloadCopy = () => run(setBackNote, async () => {
+    const d = await post2({ action: "backup-download" });
+    downloadFile(`randolph-timeclock-${todayStr()}.json`, JSON.stringify(d, null, 2), "application/json");
+    return `Downloaded ${d.entries.length} shifts, your crew list, and your jobs.`;
+  });
+  return /* @__PURE__ */ jsxs("div", { className: "grid lg:grid-cols-2 gap-x-14 gap-y-14 max-w-5xl", children: [
+    /* @__PURE__ */ jsxs("form", { onSubmit: savePass, className: "space-y-4", children: [
+      /* @__PURE__ */ jsx(SectionHead, { title: "Owner Passcode", note: weakPasscode ? "You are still on the 4-digit PIN. Set a longer passcode here. Letters, numbers, or both, at least 6 characters." : "Letters, numbers, or both, at least 6 characters." }),
+      /* @__PURE__ */ jsxs("div", { children: [
+        /* @__PURE__ */ jsx("label", { className: label, htmlFor: "new-pass", children: "New Passcode" }),
+        /* @__PURE__ */ jsx(PasscodeField, { id: "new-pass", value: pass, onChange: setPass, autoComplete: "new-password" })
+      ] }),
+      /* @__PURE__ */ jsx(Said, { note: passNote }),
+      /* @__PURE__ */ jsxs("div", { className: "flex flex-wrap gap-3", children: [
+        /* @__PURE__ */ jsx("button", { className: btn, children: "Update Passcode" }),
+        /* @__PURE__ */ jsx("button", { type: "button", className: btnGhost, onClick: onSignOut, children: "Sign Out" })
+      ] }),
+      /* @__PURE__ */ jsx("p", { className: "text-on-surface-variant/70 text-xs", children: "Five wrong tries locks the login for 15 minutes. This phone stays signed in for a week." })
+    ] }),
+    /* @__PURE__ */ jsxs("form", { onSubmit: saveWeek, className: "space-y-4", children: [
+      /* @__PURE__ */ jsx(SectionHead, { title: "Workweek for Overtime", note: "Overtime pays 1.5× for hours over 40 in a week. Pick the day your pay week starts so the totals match your payroll." }),
+      /* @__PURE__ */ jsxs("div", { children: [
+        /* @__PURE__ */ jsx("label", { className: label, htmlFor: "week-day", children: "Week Starts On" }),
+        /* @__PURE__ */ jsx("select", { id: "week-day", className: input, value: wd, onChange: (e) => setWd(e.target.value), children: DAYS.map((d, i) => /* @__PURE__ */ jsx("option", { value: i, children: d }, i)) })
+      ] }),
+      /* @__PURE__ */ jsx(Said, { note: weekNote }),
+      /* @__PURE__ */ jsx("button", { className: btn, children: "Save Workweek" })
+    ] }),
+    /* @__PURE__ */ jsxs("div", { className: "space-y-4", children: [
+      /* @__PURE__ */ jsx(SectionHead, { title: "Location at Clock-In", note: "Saves where the phone is at the moment someone clocks in and again when they clock out, with a map link on each shift. Nobody is followed during the day." }),
+      /* @__PURE__ */ jsx(Toggle, { id: "loc-on", checked: settings.locationStamp, onChange: saveLoc, children: "Save location at clock-in and clock-out" }),
+      /* @__PURE__ */ jsx(Said, { note: locNote }),
+      /* @__PURE__ */ jsx("p", { className: "text-on-surface-variant/70 text-xs", children: "If someone turns location off on their phone, they can still clock in. The shift is marked so you can see it." })
+    ] }),
+    /* @__PURE__ */ jsxs("form", { onSubmit: saveMail, className: "space-y-4", children: [
+      /* @__PURE__ */ jsx(SectionHead, { title: "Weekly Payroll Email", note: "Last week's hours and gross pay for each person, in your inbox, with every shift attached as a spreadsheet." }),
+      /* @__PURE__ */ jsx(Toggle, { id: "mail-on", checked: mail.on, onChange: (on) => setMail({ ...mail, on }), children: "Email me the payroll summary every week" }),
+      /* @__PURE__ */ jsxs("div", { children: [
+        /* @__PURE__ */ jsx("label", { className: label, htmlFor: "mail-to", children: "Send To" }),
+        /* @__PURE__ */ jsx("input", { id: "mail-to", type: "email", autoComplete: "email", className: input, value: mail.to, onChange: (e) => setMail({ ...mail, to: e.target.value }), placeholder: "you@example.com" })
+      ] }),
+      /* @__PURE__ */ jsxs("div", { children: [
+        /* @__PURE__ */ jsx("label", { className: label, htmlFor: "mail-day", children: "Send On" }),
+        /* @__PURE__ */ jsx("select", { id: "mail-day", className: input, value: mail.day, onChange: (e) => setMail({ ...mail, day: Number(e.target.value) }), children: DAYS.map((d, i) => /* @__PURE__ */ jsxs("option", { value: i, children: [
+          d,
+          " morning"
+        ] }, i)) })
+      ] }),
+      !connected.email && /* @__PURE__ */ jsx(NotConnected, { what: "Email" }),
+      /* @__PURE__ */ jsx(Said, { note: mailNote }),
+      /* @__PURE__ */ jsxs("div", { className: "flex flex-wrap gap-3", children: [
+        /* @__PURE__ */ jsx("button", { className: btn, children: "Save" }),
+        connected.email && /* @__PURE__ */ jsx("button", { type: "button", className: btnGhost, onClick: sendNow, disabled: !mail.to, children: "Send Last Week Now" })
+      ] })
+    ] }),
+    /* @__PURE__ */ jsxs("form", { onSubmit: saveRem, className: "space-y-4", children: [
+      /* @__PURE__ */ jsx(SectionHead, { title: "Clock-Out Reminder Texts", note: "When someone is still on the clock long after a normal day, they get one text with their clock-out link. Add each person's cell number under Crew." }),
+      /* @__PURE__ */ jsx(Toggle, { id: "rem-on", checked: rem.on, onChange: (on) => setRem({ ...rem, on }), children: "Text a reminder to anyone who forgets to clock out" }),
+      /* @__PURE__ */ jsxs("div", { children: [
+        /* @__PURE__ */ jsx("label", { className: label, htmlFor: "rem-hours", children: "Send After This Many Hours on the Clock" }),
+        /* @__PURE__ */ jsx("select", { id: "rem-hours", className: input, value: rem.afterHours, onChange: (e) => setRem({ ...rem, afterHours: Number(e.target.value) }), children: [8, 9, 10, 11, 12, 13, 14].map((h) => /* @__PURE__ */ jsxs("option", { value: h, children: [
+          h,
+          " hours"
+        ] }, h)) })
+      ] }),
+      !connected.sms && /* @__PURE__ */ jsx(NotConnected, { what: "Texting" }),
+      /* @__PURE__ */ jsx(Said, { note: remNote }),
+      /* @__PURE__ */ jsx("button", { className: btn, children: "Save" })
+    ] }),
+    /* @__PURE__ */ jsxs("div", { className: "space-y-4", children: [
+      /* @__PURE__ */ jsx(SectionHead, { title: "Backups", note: "Every night at 3:00 AM a full copy of your shifts, crew, and jobs is saved. The last 35 nights are kept, plus one from the start of every month." }),
+      /* @__PURE__ */ jsx("p", { className: "text-on-surface", children: backup ? /* @__PURE__ */ jsxs(Fragment, { children: [
+        "Last backup ",
+        /* @__PURE__ */ jsx("strong", { className: "font-label-bold", children: fmtStamp(backup.takenAt) }),
+        backup.entries != null ? `, ${backup.entries.toLocaleString("en-US")} shifts` : "",
+        "."
+      ] }) : "The first nightly backup runs tonight." }),
+      /* @__PURE__ */ jsx(Said, { note: backNote }),
+      /* @__PURE__ */ jsxs("div", { className: "flex flex-wrap gap-3", children: [
+        /* @__PURE__ */ jsx("button", { className: btn, onClick: backupNow, children: "Back Up Now" }),
+        /* @__PURE__ */ jsx("button", { className: btnGhost, onClick: downloadCopy, children: "Download a Copy" })
+      ] }),
+      /* @__PURE__ */ jsx("p", { className: "text-on-surface-variant/70 text-xs", children: "Payroll records have to be kept for three years. The downloaded copy is yours to store wherever you keep business records." })
+    ] })
+  ] });
+}
 const API = "/.netlify/functions/timeclock";
-const label = "font-label-bold text-label-bold uppercase text-primary tracking-[0.2em] block mb-2";
-const input = "bg-surface-container border-b border-surface-container-highest p-3 text-on-surface focus:border-primary focus:outline-none transition-all w-full";
-const btn = "bg-primary-container text-on-primary-container font-label-bold text-label-bold uppercase px-5 py-3 metallic-gradient beveled-edge industrial-glow transition-all active:scale-95 disabled:opacity-50";
-const btnGhost = "border border-surface-container-highest text-on-surface-variant font-label-bold text-label-bold uppercase px-4 py-2 hover:text-primary hover:border-primary transition-all";
+const TOKEN_KEY = "rc_tc_admin";
+const TABS = ["entries", "payroll", "projects", "crew", "jobs", "settings"];
+const readToken = () => {
+  try {
+    return localStorage.getItem(TOKEN_KEY) || "";
+  } catch {
+    return "";
+  }
+};
+const writeToken = (t) => {
+  try {
+    if (t) localStorage.setItem(TOKEN_KEY, t);
+    else localStorage.removeItem(TOKEN_KEY);
+  } catch {
+  }
+};
+const NO_SETTINGS = {
+  weekStartDay: 0,
+  lockedThrough: null,
+  locationStamp: false,
+  payrollEmail: { on: false, to: "", day: 1 },
+  reminders: { on: false, afterHours: 10 },
+  quickbooks: { serviceItem: "", payrollItem: "", otPayrollItem: "", companyName: "", companyCreateTime: "" }
+};
 function TimeClockAdmin() {
-  const [pin, setPin] = useState("");
+  const [passcode, setPasscode] = useState("");
   const [authed, setAuthed] = useState(false);
+  const [checking, setChecking] = useState(true);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
-  const [tab, setTab] = useState("entries");
+  const [tab2, setTab] = useState("entries");
+  const token = useRef("");
   const [employees, setEmployees] = useState([]);
   const [jobs, setJobs] = useState([]);
   const [entries, setEntries] = useState([]);
-  const [weekStartDay, setWeekStartDay] = useState(0);
-  const [lockedThrough, setLockedThrough] = useState(null);
-  const post2 = async (body) => {
-    const r = await fetch(API, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...body, adminPin: pin }) });
+  const [trashCount, setTrashCount] = useState(0);
+  const [settings, setSettings] = useState(NO_SETTINGS);
+  const [connected, setConnected] = useState({ email: false, sms: false });
+  const [backup, setBackup] = useState(null);
+  const [weak, setWeak] = useState(false);
+  const [loadErr, setLoadErr] = useState("");
+  const setToken = (t) => {
+    token.current = t;
+    writeToken(t);
+  };
+  const signOut = useCallback((why = "") => {
+    setToken("");
+    setAuthed(false);
+    setPasscode("");
+    setEntries([]);
+    setEmployees([]);
+    setJobs([]);
+    setErr(why);
+  }, []);
+  const call = async (body) => {
+    const r = await fetch(API, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     const d = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(d.error || "Something went wrong.");
+    return { ok: r.ok, d };
+  };
+  const post2 = useCallback(async (body) => {
+    const { ok, d } = await call({ ...body, adminToken: token.current });
+    if (!ok) {
+      if (d.relogin) signOut("You were signed out. Sign in again.");
+      throw new Error(d.error || "Something went wrong.");
+    }
     return d;
-  };
-  const refresh = async () => {
-    const a = await post2({ action: "admin-bootstrap" });
-    setEmployees(a.employees || []);
-    setJobs(a.jobs || []);
-    setWeekStartDay(a.weekStartDay ?? 0);
-    setLockedThrough(a.lockedThrough ?? null);
-    const e = await post2({ action: "admin-entries" });
-    const nameById = new Map((a.employees || []).map((x) => [x.id, x.name]));
-    setEntries((e.entries || []).map((x) => ({ ...x, employeeName: x.employeeId && nameById.get(x.employeeId) || x.employeeName })));
-  };
+  }, [signOut]);
+  const refresh = useCallback(async () => {
+    const [a, e] = await Promise.all([post2({ action: "admin-bootstrap" }), post2({ action: "admin-entries" })]);
+    const crew = a.employees || [];
+    const jobList = a.jobs || [];
+    setEmployees(crew);
+    setJobs(jobList);
+    setSettings({ ...NO_SETTINGS, weekStartDay: a.weekStartDay ?? 0, lockedThrough: a.lockedThrough ?? null, locationStamp: a.locationStamp === true, payrollEmail: a.payrollEmail || NO_SETTINGS.payrollEmail, reminders: a.reminders || NO_SETTINGS.reminders, quickbooks: a.quickbooks || NO_SETTINGS.quickbooks });
+    setConnected(a.connected || { email: false, sms: false });
+    setBackup(a.backup || null);
+    setWeak(a.weakPasscode === true);
+    const nameById = new Map(crew.map((x) => [x.id, x.name]));
+    const jobById = new Map(jobList.map((x) => [x.id, x.name]));
+    setEntries((e.entries || []).map((x) => ({
+      ...x,
+      employeeName: x.employeeId && nameById.get(x.employeeId) || x.employeeName,
+      jobName: x.jobId && jobById.get(x.jobId) || x.jobName
+    })));
+    setTrashCount(e.trashCount || 0);
+  }, [post2]);
+  const reload = useCallback(async () => {
+    setLoadErr("");
+    try {
+      await refresh();
+    } catch (e) {
+      setLoadErr(e.message);
+    }
+  }, [refresh]);
   useEffect(() => {
     window.scrollTo(0, 0);
     document.title = "Time Clock Admin | Randolph Construction";
+    const saved = readToken();
+    if (!saved) {
+      setChecking(false);
+      return;
+    }
+    token.current = saved;
+    refresh().then(() => setAuthed(true)).catch(() => {
+      setToken("");
+      setErr("");
+    }).finally(() => setChecking(false));
   }, []);
   const login = async (e) => {
     e.preventDefault();
     setErr("");
+    if (!passcode) return setErr("Enter your passcode.");
     setBusy(true);
     try {
+      const { ok, d } = await call({ action: "admin-login", passcode });
+      if (!ok) throw new Error(d.error || "Something went wrong.");
+      setToken(d.token);
+      setPasscode("");
       await refresh();
       setAuthed(true);
     } catch (e2) {
@@ -2917,26 +4659,13 @@ function TimeClockAdmin() {
           "Owner ",
           /* @__PURE__ */ jsx("span", { className: "text-primary", children: "Login" })
         ] }),
-        /* @__PURE__ */ jsxs("form", { onSubmit: login, className: "bg-surface-container-lowest p-6 border-2 border-surface-container-highest space-y-5", children: [
+        checking ? /* @__PURE__ */ jsx("p", { className: "text-on-surface-variant", children: "Loading…" }) : /* @__PURE__ */ jsxs("form", { onSubmit: login, className: "space-y-5", children: [
           /* @__PURE__ */ jsxs("div", { children: [
-            /* @__PURE__ */ jsx("label", { className: label, htmlFor: "apin", children: "Admin PIN" }),
-            /* @__PURE__ */ jsx(
-              "input",
-              {
-                id: "apin",
-                className: `${input} tracking-[0.5em] text-lg`,
-                type: "password",
-                inputMode: "numeric",
-                maxLength: 4,
-                value: pin,
-                onChange: (e) => setPin(e.target.value.replace(/\D/g, "")),
-                placeholder: "••••"
-              }
-            )
+            /* @__PURE__ */ jsx("label", { className: label, htmlFor: "apin", children: "Passcode" }),
+            /* @__PURE__ */ jsx(PasscodeField, { id: "apin", value: passcode, onChange: setPasscode, autoComplete: "current-password" })
           ] }),
-          err && /* @__PURE__ */ jsx("p", { className: "text-error text-sm font-label-bold", children: err }),
-          /* @__PURE__ */ jsx("button", { className: `${btn} w-full`, disabled: busy, children: busy ? "Checking…" : "Sign In" }),
-          /* @__PURE__ */ jsx("p", { className: "text-on-surface-variant/70 text-xs text-center", children: "Default PIN is 1111 — change it under Settings." })
+          err && /* @__PURE__ */ jsx("p", { role: "alert", className: errorText, children: err }),
+          /* @__PURE__ */ jsx("button", { className: `${btn} w-full`, disabled: busy, children: busy ? "Checking…" : "Sign In" })
         ] })
       ] }) }),
       /* @__PURE__ */ jsx(Footer, {})
@@ -2950,911 +4679,36 @@ function TimeClockAdmin() {
           "Time Clock ",
           /* @__PURE__ */ jsx("span", { className: "text-primary", children: "Admin" })
         ] }),
-        /* @__PURE__ */ jsx("button", { className: btnGhost, onClick: refresh, children: "Refresh" })
+        /* @__PURE__ */ jsxs("div", { className: "flex flex-wrap gap-3", children: [
+          /* @__PURE__ */ jsx("button", { className: btnGhost, onClick: reload, children: "Refresh" }),
+          /* @__PURE__ */ jsx("button", { className: btnGhost, onClick: () => signOut(), children: "Sign Out" })
+        ] })
       ] }),
-      /* @__PURE__ */ jsx("div", { className: "flex flex-wrap gap-2 mb-8 border-b border-surface-container-highest", children: ["entries", "payroll", "projects", "crew", "jobs", "settings"].map((t) => /* @__PURE__ */ jsx(
+      weak && /* @__PURE__ */ jsxs("p", { className: "mb-8 border border-primary p-4 text-on-surface", children: [
+        "Your login is still a 4-digit PIN, which is easy to guess. ",
+        /* @__PURE__ */ jsx("button", { className: "underline underline-offset-4 text-primary font-label-bold", onClick: () => setTab("settings"), children: "Set a longer passcode" }),
+        ". It takes a minute."
+      ] }),
+      loadErr && /* @__PURE__ */ jsx("p", { role: "alert", className: `${errorText} mb-6`, children: loadErr }),
+      /* @__PURE__ */ jsx("div", { role: "tablist", "aria-label": "Time clock sections", className: "flex flex-wrap gap-x-2 mb-10 border-b border-surface-container-highest", children: TABS.map((t) => /* @__PURE__ */ jsx(
         "button",
         {
+          role: "tab",
+          "aria-selected": tab2 === t,
           onClick: () => setTab(t),
-          className: `font-label-bold text-label-bold uppercase px-5 py-3 -mb-px border-b-2 transition-all ${tab === t ? "border-primary text-primary" : "border-transparent text-on-surface-variant hover:text-on-surface"}`,
+          className: `font-label-bold text-label-bold uppercase px-4 sm:px-5 py-3 -mb-px border-b-2 transition-all ${tab2 === t ? "border-primary text-primary" : "border-transparent text-on-surface-variant hover:text-on-surface"}`,
           children: t
         },
         t
       )) }),
-      tab === "entries" && /* @__PURE__ */ jsx(EntriesTab, { entries, jobs, lockedThrough, post: post2, onChange: refresh }),
-      tab === "payroll" && /* @__PURE__ */ jsx(PayrollTab, { entries, weekStartDay, lockedThrough, post: post2, onChange: refresh }),
-      tab === "projects" && /* @__PURE__ */ jsx(ProjectsTab, { jobs, entries, post: post2, onChange: refresh }),
-      tab === "crew" && /* @__PURE__ */ jsx(CrewTab, { employees, post: post2, onChange: refresh }),
-      tab === "jobs" && /* @__PURE__ */ jsx(JobsTab, { jobs, entries, post: post2, onChange: refresh }),
-      tab === "settings" && /* @__PURE__ */ jsx(SettingsTab, { post: post2, weekStartDay, onChange: refresh })
+      tab2 === "entries" && /* @__PURE__ */ jsx(EntriesTab, { entries, jobs, lockedThrough: settings.lockedThrough, trashCount, showLocation: settings.locationStamp, post: post2, onChange: reload }),
+      tab2 === "payroll" && /* @__PURE__ */ jsx(PayrollTab, { entries, jobs, settings, post: post2, onChange: reload }),
+      tab2 === "projects" && /* @__PURE__ */ jsx(ProjectsTab, { jobs, entries, post: post2, onChange: reload }),
+      tab2 === "crew" && /* @__PURE__ */ jsx(CrewTab, { employees, entries, smsOn: connected.sms, post: post2, onChange: reload }),
+      tab2 === "jobs" && /* @__PURE__ */ jsx(JobsTab, { jobs, entries, post: post2, onChange: reload }),
+      tab2 === "settings" && /* @__PURE__ */ jsx(SettingsTab, { settings, connected, backup, weakPasscode: weak, post: post2, onChange: reload, onToken: setToken, onSignOut: () => signOut() })
     ] }) }),
     /* @__PURE__ */ jsx(Footer, {})
-  ] });
-}
-const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-const r2 = (n) => Math.round(n * 100) / 100;
-const fmtWeek = (iso) => {
-  const d = /* @__PURE__ */ new Date(`${iso}T00:00:00Z`);
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
-};
-function weekStart(dateStr, startDay = 0) {
-  const d = /* @__PURE__ */ new Date(`${dateStr}T00:00:00Z`);
-  const off = (d.getUTCDay() - startDay + 7) % 7;
-  d.setUTCDate(d.getUTCDate() - off);
-  return d.toISOString().slice(0, 10);
-}
-function computePayroll(entries, startDay = 0) {
-  const groups = /* @__PURE__ */ new Map();
-  for (const e of entries) {
-    const key = `${e.employeeName}|${weekStart(e.date, startDay)}`;
-    const arr = groups.get(key) || [];
-    arr.push(e);
-    groups.set(key, arr);
-  }
-  const rows = [];
-  for (const [key, list] of Array.from(groups.entries())) {
-    const [employee, week] = key.split("|");
-    const sorted = [...list].sort((a, b) => (a.date + (a.createdAt || "")).localeCompare(b.date + (b.createdAt || "")));
-    let cum = 0, reg = 0, ot = 0, gross = 0;
-    for (const e of sorted) {
-      const h = e.hours || 0;
-      const regPart = Math.min(h, Math.max(0, 40 - cum));
-      const otPart = h - regPart;
-      reg += regPart;
-      ot += otPart;
-      gross += regPart * e.rate + otPart * e.rate * 1.5;
-      cum += h;
-    }
-    rows.push({ employee, week, reg: r2(reg), ot: r2(ot), total: r2(reg + ot), gross: r2(gross) });
-  }
-  rows.sort((a, b) => b.week.localeCompare(a.week) || a.employee.localeCompare(b.employee));
-  return rows;
-}
-function PayrollTab({ entries, weekStartDay, lockedThrough, post: post2, onChange }) {
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
-  const [lockDate, setLockDate] = useState(lockedThrough || "");
-  const saveLock = async (clear = false) => {
-    await post2({ action: "set-lock", lockedThrough: clear ? "" : lockDate });
-    onChange();
-  };
-  const filtered = entries.filter((e) => (!from || e.date >= from) && (!to || e.date <= to));
-  const rows = computePayroll(filtered, weekStartDay);
-  const grossTotal = rows.reduce((s, r) => s + r.gross, 0);
-  const otTotal = rows.reduce((s, r) => s + r.ot, 0);
-  const csv = () => {
-    const head = ["Week of", "Employee", "Regular Hrs", "Overtime Hrs", "Total Hrs", "Gross Pay"];
-    const body = [head, ...rows.map((r) => [r.week, r.employee, r.reg, r.ot, r.total, r.gross.toFixed(2)])].map((row) => row.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n");
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(new Blob([body], { type: "text/csv" }));
-    a.download = `randolph-payroll${from ? `-${from}` : ""}${to ? `-to-${to}` : ""}.csv`;
-    a.click();
-  };
-  return /* @__PURE__ */ jsxs("div", { className: "space-y-8", children: [
-    /* @__PURE__ */ jsxs("div", { className: "bg-surface-container-lowest p-5 border-2 border-surface-container-highest", children: [
-      /* @__PURE__ */ jsx("h3", { className: "font-headline-md text-headline-md uppercase mb-1", children: "Lock Payroll" }),
-      /* @__PURE__ */ jsx("p", { className: "text-on-surface-variant text-sm mb-4", children: "Once you've paid a period, lock it so nobody can add or change times on or before that date." }),
-      lockedThrough ? /* @__PURE__ */ jsxs("div", { className: "flex flex-wrap items-center gap-4", children: [
-        /* @__PURE__ */ jsxs("span", { className: "font-label-bold text-primary uppercase tracking-widest text-sm", children: [
-          "Locked through ",
-          lockedThrough
-        ] }),
-        /* @__PURE__ */ jsx("button", { className: btnGhost, onClick: () => saveLock(true), children: "Unlock" })
-      ] }) : /* @__PURE__ */ jsxs("div", { className: "flex flex-wrap items-end gap-3", children: [
-        /* @__PURE__ */ jsxs("div", { children: [
-          /* @__PURE__ */ jsx("label", { className: label, children: "Lock Through" }),
-          /* @__PURE__ */ jsx("input", { type: "date", className: input, value: lockDate, onChange: (e) => setLockDate(e.target.value) })
-        ] }),
-        /* @__PURE__ */ jsx("button", { className: btn, disabled: !lockDate, onClick: () => saveLock(), children: "Lock" })
-      ] })
-    ] }),
-    /* @__PURE__ */ jsxs("div", { className: "grid grid-cols-2 gap-4 bg-surface-container-lowest p-5 border-2 border-surface-container-highest max-w-md", children: [
-      /* @__PURE__ */ jsxs("div", { children: [
-        /* @__PURE__ */ jsx("label", { className: label, children: "From" }),
-        /* @__PURE__ */ jsx("input", { type: "date", className: input, value: from, onChange: (e) => setFrom(e.target.value) })
-      ] }),
-      /* @__PURE__ */ jsxs("div", { children: [
-        /* @__PURE__ */ jsx("label", { className: label, children: "To" }),
-        /* @__PURE__ */ jsx("input", { type: "date", className: input, value: to, onChange: (e) => setTo(e.target.value) })
-      ] })
-    ] }),
-    /* @__PURE__ */ jsxs("div", { className: "grid sm:grid-cols-2 gap-4", children: [
-      /* @__PURE__ */ jsx(Stat, { label: "Overtime Hours", value: otTotal.toFixed(2) }),
-      /* @__PURE__ */ jsx(Stat, { label: "Total Gross Pay", value: `$${grossTotal.toFixed(2)}` })
-    ] }),
-    /* @__PURE__ */ jsxs("div", { className: "flex justify-between items-center", children: [
-      /* @__PURE__ */ jsx("h3", { className: "font-headline-md text-headline-md uppercase", children: "Weekly Payroll" }),
-      /* @__PURE__ */ jsx("button", { className: btn, onClick: csv, disabled: !rows.length, children: "Export Payroll CSV" })
-    ] }),
-    /* @__PURE__ */ jsx("div", { className: "overflow-x-auto border-2 border-surface-container-highest", children: /* @__PURE__ */ jsxs("table", { className: "w-full text-sm", children: [
-      /* @__PURE__ */ jsx("thead", { className: "bg-surface-container text-on-surface-variant uppercase text-xs tracking-wider", children: /* @__PURE__ */ jsx("tr", { children: ["Week of", "Employee", "Regular", "Overtime", "Total Hrs", "Gross Pay"].map((h) => /* @__PURE__ */ jsx("th", { className: "text-left p-3 font-label-bold", children: h }, h)) }) }),
-      /* @__PURE__ */ jsxs("tbody", { children: [
-        rows.length === 0 && /* @__PURE__ */ jsx("tr", { children: /* @__PURE__ */ jsx("td", { colSpan: 6, className: "p-6 text-center text-on-surface-variant", children: "No hours logged yet." }) }),
-        rows.map((r, i) => /* @__PURE__ */ jsxs("tr", { className: "border-t border-surface-container-highest", children: [
-          /* @__PURE__ */ jsxs("td", { className: "p-3 whitespace-nowrap", children: [
-            "Week of ",
-            fmtWeek(r.week)
-          ] }),
-          /* @__PURE__ */ jsx("td", { className: "p-3 whitespace-nowrap font-label-bold", children: r.employee }),
-          /* @__PURE__ */ jsx("td", { className: "p-3", children: r.reg }),
-          /* @__PURE__ */ jsx("td", { className: "p-3", children: r.ot > 0 ? /* @__PURE__ */ jsx("span", { className: "text-primary font-label-bold", children: r.ot }) : "0" }),
-          /* @__PURE__ */ jsx("td", { className: "p-3 font-label-bold", children: r.total }),
-          /* @__PURE__ */ jsxs("td", { className: "p-3 font-label-bold text-primary", children: [
-            "$",
-            r.gross.toFixed(2)
-          ] })
-        ] }, i))
-      ] })
-    ] }) }),
-    /* @__PURE__ */ jsxs("p", { className: "text-on-surface-variant/80 text-xs", children: [
-      "Overtime is calculated at 1.5× the hourly rate for hours over 40 in a workweek (starts ",
-      DAYS[weekStartDay],
-      "). Gross pay shown is before taxes and withholdings. Change the workweek under Settings."
-    ] })
-  ] });
-}
-function EntriesTab({ entries, jobs, lockedThrough, post: post2, onChange }) {
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
-  const [emp, setEmp] = useState("");
-  const [job, setJob] = useState("");
-  const [editing, setEditing] = useState(null);
-  const [saveErr, setSaveErr] = useState("");
-  const empNames = useMemo(() => Array.from(new Set(entries.map((e) => e.employeeName))).sort(), [entries]);
-  const jobNames = useMemo(() => Array.from(new Set(entries.map((e) => e.jobName).filter(Boolean))).sort(), [entries]);
-  const filtered = entries.filter((e) => (!from || e.date >= from) && (!to || e.date <= to) && (!emp || e.employeeName === emp) && (!job || e.jobName === job));
-  const totalHrs = filtered.reduce((s, e) => s + e.hours, 0);
-  const totalPay = filtered.reduce((s, e) => s + e.pay, 0);
-  const byKey = (key) => {
-    const m = /* @__PURE__ */ new Map();
-    for (const e of filtered) {
-      const k = e[key] || "(none)";
-      const cur = m.get(k) || { hours: 0, pay: 0 };
-      m.set(k, { hours: cur.hours + e.hours, pay: cur.pay + e.pay });
-    }
-    return Array.from(m.entries()).sort((a, b) => b[1].pay - a[1].pay);
-  };
-  const csv = () => {
-    const head = ["Date", "Employee", "Job", "Address", "Clock In", "Clock Out", "Lunch", "Hours", "Rate", "Pay"];
-    const rows = filtered.map((e) => [e.date, e.employeeName, e.jobName, e.address, e.clockIn, e.clockOut, lunchLabel(e.lunch), e.hours, e.rate, e.pay]);
-    const esc = (v) => `"${String(v).replace(/"/g, '""')}"`;
-    const body = [head, ...rows].map((r) => r.map(esc).join(",")).join("\n");
-    const blob = new Blob([body], { type: "text/csv" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = `randolph-hours${from ? `-${from}` : ""}${to ? `-to-${to}` : ""}.csv`;
-    a.click();
-  };
-  const del = async (id) => {
-    if (confirm("Delete this entry?")) {
-      await post2({ action: "delete-entry", id });
-      onChange();
-    }
-  };
-  const saveEdit = async (ev) => {
-    ev.preventDefault();
-    setSaveErr("");
-    if (!editing) return;
-    try {
-      await post2({ action: "update-entry", id: editing.id, date: editing.date, clockIn: editing.clockIn, clockOut: editing.clockOut, lunch: editing.lunch, jobName: editing.jobName, address: editing.address });
-      setEditing(null);
-      onChange();
-    } catch (e2) {
-      setSaveErr(e2.message);
-    }
-  };
-  return /* @__PURE__ */ jsxs("div", { className: "space-y-8", children: [
-    editing && /* @__PURE__ */ jsx("div", { className: "fixed inset-0 z-[100] bg-black/70 flex items-center justify-center p-4", onClick: () => setEditing(null), children: /* @__PURE__ */ jsxs("form", { onClick: (ev) => ev.stopPropagation(), onSubmit: saveEdit, className: "bg-surface-container-lowest border-2 border-primary p-6 w-full max-w-md space-y-4 max-h-[90vh] overflow-y-auto", children: [
-      /* @__PURE__ */ jsxs("h3", { className: "font-headline-md text-headline-md uppercase", children: [
-        "Edit Entry: ",
-        editing.employeeName
-      ] }),
-      /* @__PURE__ */ jsxs("div", { children: [
-        /* @__PURE__ */ jsx("label", { className: label, children: "Date" }),
-        /* @__PURE__ */ jsx("input", { type: "date", className: input, value: editing.date, onChange: (ev) => setEditing({ ...editing, date: ev.target.value }) })
-      ] }),
-      /* @__PURE__ */ jsxs("div", { className: "grid grid-cols-2 gap-3", children: [
-        /* @__PURE__ */ jsxs("div", { children: [
-          /* @__PURE__ */ jsx("label", { className: label, children: "Clock In" }),
-          /* @__PURE__ */ jsx("input", { type: "time", className: input, value: editing.clockIn, onChange: (ev) => setEditing({ ...editing, clockIn: ev.target.value }) })
-        ] }),
-        /* @__PURE__ */ jsxs("div", { children: [
-          /* @__PURE__ */ jsx("label", { className: label, children: "Clock Out" }),
-          /* @__PURE__ */ jsx("input", { type: "time", className: input, value: editing.clockOut, onChange: (ev) => setEditing({ ...editing, clockOut: ev.target.value }) })
-        ] })
-      ] }),
-      /* @__PURE__ */ jsxs("div", { children: [
-        /* @__PURE__ */ jsx("label", { className: label, children: "Lunch Break" }),
-        /* @__PURE__ */ jsxs("select", { className: input, value: lunchToMins(editing.lunch), onChange: (ev) => setEditing({ ...editing, lunch: Number(ev.target.value) }), children: [
-          LUNCH_OPTIONS.map((o) => /* @__PURE__ */ jsx("option", { value: o.v, children: o.label }, o.v)),
-          !LUNCH_OPTIONS.some((o) => o.v === lunchToMins(editing.lunch)) && /* @__PURE__ */ jsx("option", { value: lunchToMins(editing.lunch), children: lunchLabel(editing.lunch) })
-        ] })
-      ] }),
-      /* @__PURE__ */ jsxs("div", { children: [
-        /* @__PURE__ */ jsx("label", { className: label, children: "Job" }),
-        /* @__PURE__ */ jsxs("select", { className: input, value: editing.jobName, onChange: (ev) => {
-          const name = ev.target.value;
-          const j = jobs.find((x) => x.name === name);
-          setEditing({ ...editing, jobName: name, address: j ? j.address || "" : editing.address });
-        }, children: [
-          /* @__PURE__ */ jsx("option", { value: "", children: "—" }),
-          jobs.map((j) => /* @__PURE__ */ jsx("option", { value: j.name, children: j.name }, j.id)),
-          editing.jobName && !jobs.some((j) => j.name === editing.jobName) && /* @__PURE__ */ jsx("option", { value: editing.jobName, children: editing.jobName })
-        ] })
-      ] }),
-      /* @__PURE__ */ jsxs("div", { children: [
-        /* @__PURE__ */ jsx("label", { className: label, children: "Address" }),
-        /* @__PURE__ */ jsx("input", { className: input, value: editing.address, onChange: (ev) => setEditing({ ...editing, address: ev.target.value }) })
-      ] }),
-      saveErr && /* @__PURE__ */ jsx("p", { className: "text-error text-sm font-label-bold", children: saveErr }),
-      /* @__PURE__ */ jsxs("div", { className: "flex gap-3", children: [
-        /* @__PURE__ */ jsx("button", { className: btn, children: "Save" }),
-        /* @__PURE__ */ jsx("button", { type: "button", className: btnGhost, onClick: () => setEditing(null), children: "Cancel" })
-      ] }),
-      /* @__PURE__ */ jsx("p", { className: "text-on-surface-variant/70 text-xs", children: "Hours and pay recalculate automatically when you save." })
-    ] }) }),
-    /* @__PURE__ */ jsxs("div", { className: "grid grid-cols-2 md:grid-cols-4 gap-4 bg-surface-container-lowest p-5 border-2 border-surface-container-highest", children: [
-      /* @__PURE__ */ jsxs("div", { children: [
-        /* @__PURE__ */ jsx("label", { className: label, children: "From" }),
-        /* @__PURE__ */ jsx("input", { type: "date", className: input, value: from, onChange: (e) => setFrom(e.target.value) })
-      ] }),
-      /* @__PURE__ */ jsxs("div", { children: [
-        /* @__PURE__ */ jsx("label", { className: label, children: "To" }),
-        /* @__PURE__ */ jsx("input", { type: "date", className: input, value: to, onChange: (e) => setTo(e.target.value) })
-      ] }),
-      /* @__PURE__ */ jsxs("div", { children: [
-        /* @__PURE__ */ jsx("label", { className: label, children: "Employee" }),
-        /* @__PURE__ */ jsxs("select", { className: input, value: emp, onChange: (e) => setEmp(e.target.value), children: [
-          /* @__PURE__ */ jsx("option", { value: "", children: "All" }),
-          empNames.map((n) => /* @__PURE__ */ jsx("option", { children: n }, n))
-        ] })
-      ] }),
-      /* @__PURE__ */ jsxs("div", { children: [
-        /* @__PURE__ */ jsx("label", { className: label, children: "Job" }),
-        /* @__PURE__ */ jsxs("select", { className: input, value: job, onChange: (e) => setJob(e.target.value), children: [
-          /* @__PURE__ */ jsx("option", { value: "", children: "All" }),
-          jobNames.map((n) => /* @__PURE__ */ jsx("option", { children: n }, n))
-        ] })
-      ] })
-    ] }),
-    /* @__PURE__ */ jsxs("div", { className: "grid sm:grid-cols-3 gap-4", children: [
-      /* @__PURE__ */ jsx(Stat, { label: "Entries", value: String(filtered.length) }),
-      /* @__PURE__ */ jsx(Stat, { label: "Total Hours", value: totalHrs.toFixed(2) }),
-      /* @__PURE__ */ jsx(Stat, { label: "Total Pay", value: `$${totalPay.toFixed(2)}` })
-    ] }),
-    /* @__PURE__ */ jsxs("div", { className: "grid md:grid-cols-2 gap-6", children: [
-      /* @__PURE__ */ jsx(RollUp, { title: "By Employee", rows: byKey("employeeName") }),
-      /* @__PURE__ */ jsx(RollUp, { title: "By Job", rows: byKey("jobName") })
-    ] }),
-    /* @__PURE__ */ jsxs("div", { className: "flex justify-between items-center", children: [
-      /* @__PURE__ */ jsx("h3", { className: "font-headline-md text-headline-md uppercase", children: "Entries" }),
-      /* @__PURE__ */ jsx("button", { className: btn, onClick: csv, disabled: !filtered.length, children: "Export CSV" })
-    ] }),
-    /* @__PURE__ */ jsx("div", { className: "overflow-x-auto border-2 border-surface-container-highest", children: /* @__PURE__ */ jsxs("table", { className: "w-full text-sm", children: [
-      /* @__PURE__ */ jsx("thead", { className: "bg-surface-container text-on-surface-variant uppercase text-xs tracking-wider", children: /* @__PURE__ */ jsx("tr", { children: ["Date", "Employee", "Job", "In", "Out", "Lunch", "Hours", "Pay", ""].map((h) => /* @__PURE__ */ jsx("th", { className: "text-left p-3 font-label-bold", children: h }, h)) }) }),
-      /* @__PURE__ */ jsxs("tbody", { children: [
-        filtered.length === 0 && /* @__PURE__ */ jsx("tr", { children: /* @__PURE__ */ jsx("td", { colSpan: 9, className: "p-6 text-center text-on-surface-variant", children: "No entries yet." }) }),
-        filtered.map((e) => /* @__PURE__ */ jsxs("tr", { className: "border-t border-surface-container-highest", children: [
-          /* @__PURE__ */ jsx("td", { className: "p-3 whitespace-nowrap", children: e.date }),
-          /* @__PURE__ */ jsx("td", { className: "p-3 whitespace-nowrap", children: e.employeeName }),
-          /* @__PURE__ */ jsx("td", { className: "p-3", children: e.jobName || /* @__PURE__ */ jsx("span", { className: "text-on-surface-variant", children: "—" }) }),
-          /* @__PURE__ */ jsx("td", { className: "p-3", children: e.clockIn }),
-          /* @__PURE__ */ jsx("td", { className: "p-3", children: e.clockOut }),
-          /* @__PURE__ */ jsx("td", { className: "p-3", children: lunchLabel(e.lunch) }),
-          /* @__PURE__ */ jsx("td", { className: "p-3 font-label-bold", children: e.hours }),
-          /* @__PURE__ */ jsxs("td", { className: "p-3 font-label-bold text-primary", children: [
-            "$",
-            e.pay.toFixed(2)
-          ] }),
-          /* @__PURE__ */ jsx("td", { className: "p-3 text-right whitespace-nowrap", children: lockedThrough && e.date <= lockedThrough ? /* @__PURE__ */ jsx("span", { className: "text-on-surface-variant/70 text-xs uppercase tracking-wider", children: "Locked" }) : /* @__PURE__ */ jsxs(Fragment, { children: [
-            /* @__PURE__ */ jsx("button", { onClick: () => setEditing(e), className: "text-on-surface-variant hover:text-primary text-xs underline mr-3", children: "edit" }),
-            /* @__PURE__ */ jsx("button", { onClick: () => del(e.id), className: "text-on-surface-variant hover:text-error text-xs underline", children: "delete" })
-          ] }) })
-        ] }, e.id))
-      ] })
-    ] }) })
-  ] });
-}
-function Stat({ label: l, value }) {
-  return /* @__PURE__ */ jsxs("div", { className: "bg-surface-container-lowest p-5 border-2 border-surface-container-highest", children: [
-    /* @__PURE__ */ jsx("div", { className: "text-label-bold uppercase text-on-surface-variant text-xs tracking-widest", children: l }),
-    /* @__PURE__ */ jsx("div", { className: "font-display-lg text-3xl text-primary mt-1", children: value })
-  ] });
-}
-function RollUp({ title, rows }) {
-  return /* @__PURE__ */ jsxs("div", { className: "bg-surface-container-lowest border-2 border-surface-container-highest", children: [
-    /* @__PURE__ */ jsx("div", { className: "bg-surface-container px-4 py-3 font-label-bold text-label-bold uppercase text-on-surface-variant tracking-widest", children: title }),
-    rows.length === 0 ? /* @__PURE__ */ jsx("div", { className: "p-4 text-on-surface-variant text-sm", children: "No data." }) : rows.map(([k, v]) => /* @__PURE__ */ jsxs("div", { className: "flex justify-between items-center px-4 py-3 border-t border-surface-container-highest", children: [
-      /* @__PURE__ */ jsx("span", { className: "truncate pr-3", children: k }),
-      /* @__PURE__ */ jsxs("span", { className: "whitespace-nowrap", children: [
-        /* @__PURE__ */ jsxs("strong", { className: "text-on-surface", children: [
-          v.hours.toFixed(2),
-          " hrs"
-        ] }),
-        " ",
-        /* @__PURE__ */ jsxs("span", { className: "text-primary font-label-bold", children: [
-          "$",
-          v.pay.toFixed(2)
-        ] })
-      ] })
-    ] }, k))
-  ] });
-}
-const blankCrew = { name: "", rate: "", pin: "" };
-function crewFormError(f) {
-  if (!f.name.trim()) return "Enter a name.";
-  if (f.rate.trim() === "" || !(Number(f.rate) >= 0)) return "Enter an hourly rate.";
-  if (!/^\d{4}$/.test(f.pin)) return "PIN must be 4 digits.";
-  return "";
-}
-function CrewFields({ f, setF, idPrefix, autoFocus }) {
-  return /* @__PURE__ */ jsxs(Fragment, { children: [
-    /* @__PURE__ */ jsxs("div", { children: [
-      /* @__PURE__ */ jsx("label", { className: label, htmlFor: `${idPrefix}-name`, children: "Name" }),
-      /* @__PURE__ */ jsx("input", { id: `${idPrefix}-name`, className: input, autoFocus, autoComplete: "off", value: f.name, onChange: (e) => setF({ ...f, name: e.target.value }) })
-    ] }),
-    /* @__PURE__ */ jsxs("div", { children: [
-      /* @__PURE__ */ jsx("label", { className: label, htmlFor: `${idPrefix}-rate`, children: "Hourly Rate ($)" }),
-      /* @__PURE__ */ jsx("input", { id: `${idPrefix}-rate`, className: input, inputMode: "decimal", autoComplete: "off", value: f.rate, onChange: (e) => setF({ ...f, rate: e.target.value.replace(/[^0-9.]/g, "") }), placeholder: "25" })
-    ] }),
-    /* @__PURE__ */ jsxs("div", { children: [
-      /* @__PURE__ */ jsx("label", { className: label, htmlFor: `${idPrefix}-pin`, children: "4-Digit PIN" }),
-      /* @__PURE__ */ jsx("input", { id: `${idPrefix}-pin`, className: `${input} tracking-[0.4em]`, inputMode: "numeric", autoComplete: "off", maxLength: 4, value: f.pin, onChange: (e) => setF({ ...f, pin: e.target.value.replace(/\D/g, "") }), placeholder: "0000" })
-    ] })
-  ] });
-}
-function CrewTab({ employees, post: post2, onChange }) {
-  const [f, setF] = useState(blankCrew);
-  const [err, setErr] = useState("");
-  const [editId, setEditId] = useState("");
-  const [ef, setEf] = useState(blankCrew);
-  const [editErr, setEditErr] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [savedId, setSavedId] = useState("");
-  const [copied, setCopied] = useState("");
-  const copy = async (id, text) => {
-    try {
-      await navigator.clipboard.writeText(text);
-    } catch {
-    }
-    setCopied(id);
-    setTimeout(() => setCopied(""), 1500);
-  };
-  const add = async (e) => {
-    e.preventDefault();
-    const problem = crewFormError(f);
-    setErr(problem);
-    if (problem) return;
-    try {
-      await post2({ action: "save-employee", employee: { name: f.name, rate: Number(f.rate), pin: f.pin } });
-      setF(blankCrew);
-      await onChange();
-    } catch (e2) {
-      setErr(e2.message);
-    }
-  };
-  const startEdit = (e) => {
-    setEditId(e.id);
-    setEf({ name: e.name, rate: String(e.rate), pin: e.pin });
-    setEditErr("");
-  };
-  const saveEdit = async (e) => {
-    e.preventDefault();
-    const problem = crewFormError(ef);
-    setEditErr(problem);
-    if (problem) return;
-    setBusy(true);
-    try {
-      await post2({ action: "save-employee", employee: { id: editId, name: ef.name, rate: Number(ef.rate), pin: ef.pin } });
-      await onChange();
-      setSavedId(editId);
-      setTimeout(() => setSavedId(""), 2500);
-      setEditId("");
-    } catch (e2) {
-      setEditErr(e2.message);
-    } finally {
-      setBusy(false);
-    }
-  };
-  const del = async (id) => {
-    if (confirm("Remove this person?")) {
-      await post2({ action: "delete-employee", id });
-      if (editId === id) setEditId("");
-      onChange();
-    }
-  };
-  return /* @__PURE__ */ jsxs("div", { className: "grid md:grid-cols-2 gap-8", children: [
-    /* @__PURE__ */ jsxs("form", { onSubmit: add, className: "bg-surface-container-lowest p-6 border-2 border-surface-container-highest space-y-5 h-fit", children: [
-      /* @__PURE__ */ jsx("h3", { className: "font-headline-md text-headline-md uppercase", children: "Add Crew Member" }),
-      /* @__PURE__ */ jsx(CrewFields, { f, setF, idPrefix: "crew-add" }),
-      err && /* @__PURE__ */ jsx("p", { role: "alert", className: "text-error text-sm font-label-bold", children: err }),
-      /* @__PURE__ */ jsx("button", { className: btn, children: "Add Member" })
-    ] }),
-    /* @__PURE__ */ jsxs("div", { className: "space-y-3", children: [
-      employees.length === 0 && /* @__PURE__ */ jsx("p", { className: "text-on-surface-variant", children: "No crew yet. Add your first person." }),
-      employees.map((e) => {
-        const link = `${typeof window !== "undefined" ? window.location.origin : ""}/employee?u=${e.id}`;
-        if (editId === e.id) {
-          return /* @__PURE__ */ jsxs("form", { onSubmit: saveEdit, className: "bg-surface-container-lowest p-4 border-2 border-primary space-y-4", children: [
-            /* @__PURE__ */ jsxs("h3", { className: "font-headline-md text-headline-md uppercase", children: [
-              "Edit ",
-              e.name
-            ] }),
-            /* @__PURE__ */ jsx(CrewFields, { f: ef, setF: setEf, idPrefix: `crew-edit-${e.id}`, autoFocus: true }),
-            editErr && /* @__PURE__ */ jsx("p", { role: "alert", className: "text-error text-sm font-label-bold", children: editErr }),
-            /* @__PURE__ */ jsxs("div", { className: "flex gap-3", children: [
-              /* @__PURE__ */ jsx("button", { className: btn, disabled: busy, children: busy ? "Saving…" : "Save Changes" }),
-              /* @__PURE__ */ jsx("button", { type: "button", className: btnGhost, disabled: busy, onClick: () => setEditId(""), children: "Cancel" })
-            ] }),
-            /* @__PURE__ */ jsx("p", { className: "text-on-surface-variant/70 text-xs", children: "A new rate applies to shifts logged from now on. Shifts already on the books keep the rate they were logged at. Their login link stays the same." })
-          ] }, e.id);
-        }
-        return /* @__PURE__ */ jsxs("div", { className: "bg-surface-container-lowest p-4 border-2 border-surface-container-highest space-y-3", children: [
-          /* @__PURE__ */ jsxs("div", { className: "flex items-start justify-between gap-3", children: [
-            /* @__PURE__ */ jsxs("div", { children: [
-              /* @__PURE__ */ jsx("div", { className: "font-headline-md text-headline-md", children: e.name }),
-              /* @__PURE__ */ jsxs("div", { className: "text-on-surface-variant text-sm", children: [
-                "$",
-                e.rate,
-                "/hr · PIN ",
-                e.pin
-              ] }),
-              savedId === e.id && /* @__PURE__ */ jsx("div", { role: "status", className: "text-primary text-xs font-label-bold uppercase tracking-widest mt-1", children: "Changes saved" })
-            ] }),
-            /* @__PURE__ */ jsxs("div", { className: "flex gap-2 shrink-0", children: [
-              /* @__PURE__ */ jsx("button", { className: btnGhost, onClick: () => startEdit(e), children: "Edit" }),
-              /* @__PURE__ */ jsx("button", { className: "text-on-surface-variant hover:text-error text-xs underline", onClick: () => del(e.id), children: "Remove" })
-            ] })
-          ] }),
-          /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-2 bg-surface-container p-2 border border-surface-container-highest", children: [
-            /* @__PURE__ */ jsx("input", { readOnly: true, value: link, onFocus: (ev) => ev.currentTarget.select(), className: "flex-1 min-w-0 bg-transparent text-on-surface-variant text-xs outline-none" }),
-            /* @__PURE__ */ jsx("button", { type: "button", onClick: () => copy(e.id, link), className: "shrink-0 bg-primary-container text-on-primary-container font-label-bold text-xs uppercase px-3 py-1.5 metallic-gradient beveled-edge", children: copied === e.id ? "Copied!" : "Copy link" })
-          ] }),
-          /* @__PURE__ */ jsxs("p", { className: "text-on-surface-variant/70 text-xs", children: [
-            "Text this link to ",
-            e.name.split(" ")[0],
-            ". It opens straight to their name, and they just enter PIN ",
-            e.pin,
-            "."
-          ] })
-        ] }, e.id);
-      })
-    ] })
-  ] });
-}
-function JobsTab({ jobs, entries, post: post2, onChange }) {
-  const blank = { id: "", customer: "", workType: "", address: "", status: "active" };
-  const [f, setF] = useState(blank);
-  const [err, setErr] = useState("");
-  const save = async (e) => {
-    e.preventDefault();
-    setErr("");
-    try {
-      await post2({ action: "save-job", job: { id: f.id || void 0, customer: f.customer, workType: f.workType, address: f.address, status: f.status } });
-      setF(blank);
-      onChange();
-    } catch (e2) {
-      setErr(e2.message);
-    }
-  };
-  const formRef = useRef(null);
-  const editJob = (j) => {
-    setF({ id: j.id, customer: j.customer || (j.workType ? "" : j.name || ""), workType: j.workType || "", address: j.address || "", status: j.status || "active" });
-    formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-    formRef.current?.querySelector("input")?.focus({ preventScroll: true });
-  };
-  const setStatus = async (j, status) => {
-    await post2({ action: "save-job", job: { id: j.id, status } });
-    onChange();
-  };
-  const del = async (id) => {
-    if (confirm("Remove this job? Its logged hours stay in your records.")) {
-      await post2({ action: "delete-job", id });
-      if (f.id === id) setF(blank);
-      onChange();
-    }
-  };
-  const order = { active: 0, future: 1, finished: 2 };
-  const sortedJobs = [...jobs].sort((a, b) => order[a.status || "active"] - order[b.status || "active"]);
-  const stats = useMemo(() => {
-    const m = /* @__PURE__ */ new Map();
-    for (const e of entries) {
-      if (!e.jobName) continue;
-      const c = m.get(e.jobName) || { hours: 0, pay: 0 };
-      m.set(e.jobName, { hours: c.hours + e.hours, pay: c.pay + e.pay });
-    }
-    return m;
-  }, [entries]);
-  return /* @__PURE__ */ jsxs("div", { className: "grid md:grid-cols-2 gap-8", children: [
-    /* @__PURE__ */ jsxs("form", { ref: formRef, onSubmit: save, className: "bg-surface-container-lowest p-6 border-2 border-surface-container-highest space-y-5 h-fit scroll-mt-32", children: [
-      /* @__PURE__ */ jsx("h3", { className: "font-headline-md text-headline-md uppercase", children: f.id ? "Edit Job" : "Add a Job" }),
-      /* @__PURE__ */ jsxs("p", { className: "text-on-surface-variant text-sm", children: [
-        "Only ",
-        /* @__PURE__ */ jsx("strong", { className: "text-primary", children: "Active" }),
-        " jobs show in the crew's dropdown. Future and Finished jobs are hidden from them, so their list stays short."
-      ] }),
-      /* @__PURE__ */ jsxs("div", { children: [
-        /* @__PURE__ */ jsx("label", { className: label, children: "Customer" }),
-        /* @__PURE__ */ jsx("input", { className: input, value: f.customer, onChange: (e) => setF({ ...f, customer: e.target.value }), placeholder: "e.g. Chick-fil-A or Mr. Smith" })
-      ] }),
-      /* @__PURE__ */ jsxs("div", { children: [
-        /* @__PURE__ */ jsx("label", { className: label, children: "Type of Work" }),
-        /* @__PURE__ */ jsx("input", { className: input, value: f.workType, onChange: (e) => setF({ ...f, workType: e.target.value }), placeholder: "e.g. Retaining Wall" })
-      ] }),
-      /* @__PURE__ */ jsxs("div", { children: [
-        /* @__PURE__ */ jsx("label", { className: label, children: "Job Site Address" }),
-        /* @__PURE__ */ jsx("input", { className: input, value: f.address, onChange: (e) => setF({ ...f, address: e.target.value }), placeholder: "123 Main St, Wadsworth, OH" })
-      ] }),
-      /* @__PURE__ */ jsxs("div", { children: [
-        /* @__PURE__ */ jsx("label", { className: label, children: "Status" }),
-        /* @__PURE__ */ jsxs("select", { className: input, value: f.status, onChange: (e) => setF({ ...f, status: e.target.value }), children: [
-          /* @__PURE__ */ jsx("option", { value: "active", children: "Active (crew can pick it)" }),
-          /* @__PURE__ */ jsx("option", { value: "future", children: "Future (hidden from crew)" }),
-          /* @__PURE__ */ jsx("option", { value: "finished", children: "Finished (hidden from crew)" })
-        ] })
-      ] }),
-      err && /* @__PURE__ */ jsx("p", { className: "text-error text-sm font-label-bold", children: err }),
-      /* @__PURE__ */ jsxs("div", { className: "flex gap-3", children: [
-        /* @__PURE__ */ jsx("button", { className: btn, children: f.id ? "Save Changes" : "Add Job" }),
-        f.id && /* @__PURE__ */ jsx("button", { type: "button", className: btnGhost, onClick: () => setF(blank), children: "Cancel" })
-      ] })
-    ] }),
-    /* @__PURE__ */ jsxs("div", { className: "space-y-3", children: [
-      jobs.length === 0 && /* @__PURE__ */ jsx("p", { className: "text-on-surface-variant", children: "No jobs yet." }),
-      sortedJobs.map((j) => {
-        const s = stats.get(j.name);
-        const status = j.status || "active";
-        return /* @__PURE__ */ jsxs("div", { className: `bg-surface-container-lowest p-4 border-2 border-surface-container-highest ${status !== "active" ? "opacity-75" : ""}`, children: [
-          /* @__PURE__ */ jsxs("div", { className: "flex items-start justify-between gap-3", children: [
-            /* @__PURE__ */ jsxs("div", { className: "min-w-0", children: [
-              /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-2 flex-wrap", children: [
-                /* @__PURE__ */ jsx("span", { className: "font-label-bold", children: j.customer || j.name }),
-                /* @__PURE__ */ jsx("span", { className: `text-[10px] font-label-bold uppercase tracking-wider px-2 py-0.5 ${JOB_STATUS_META[status].cls}`, children: JOB_STATUS_META[status].label })
-              ] }),
-              j.workType && /* @__PURE__ */ jsx("div", { className: "text-on-surface-variant text-sm mt-0.5", children: j.workType }),
-              j.address ? /* @__PURE__ */ jsx("div", { className: "text-on-surface-variant text-sm mt-0.5", children: j.address }) : /* @__PURE__ */ jsx("div", { className: "text-on-surface-variant/60 text-xs mt-0.5 italic", children: "No address saved" })
-            ] }),
-            /* @__PURE__ */ jsxs("div", { className: "flex gap-2 shrink-0", children: [
-              /* @__PURE__ */ jsx("button", { className: btnGhost, onClick: () => editJob(j), children: "Edit" }),
-              /* @__PURE__ */ jsx("button", { className: "text-on-surface-variant hover:text-error text-xs underline", onClick: () => del(j.id), children: "Remove" })
-            ] })
-          ] }),
-          /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-2 mt-3", children: [
-            /* @__PURE__ */ jsx("label", { className: "text-on-surface-variant text-xs uppercase tracking-wider font-label-bold", children: "Status" }),
-            /* @__PURE__ */ jsxs("select", { className: "bg-surface-container border border-surface-container-highest text-on-surface text-sm px-2 py-1 focus:border-primary focus:outline-none", value: status, onChange: (e) => setStatus(j, e.target.value), children: [
-              /* @__PURE__ */ jsx("option", { value: "active", children: "Active" }),
-              /* @__PURE__ */ jsx("option", { value: "future", children: "Future" }),
-              /* @__PURE__ */ jsx("option", { value: "finished", children: "Finished" })
-            ] })
-          ] }),
-          /* @__PURE__ */ jsxs("div", { className: "text-on-surface-variant text-sm mt-2", children: [
-            /* @__PURE__ */ jsxs("span", { className: "text-primary font-label-bold", children: [
-              (s?.hours || 0).toFixed(2),
-              " man-hours"
-            ] }),
-            " · ",
-            "$",
-            (s?.pay || 0).toFixed(2),
-            " labor to date"
-          ] })
-        ] }, j.id);
-      }),
-      /* @__PURE__ */ jsx("p", { className: "text-on-surface-variant/70 text-xs pt-1", children: "Labor shown is straight-time hours logged against each job, totaled across all time." })
-    ] })
-  ] });
-}
-const money = (n) => "$" + Math.round(n || 0).toLocaleString("en-US");
-function laborForJob(name, entries) {
-  let hours = 0, pay = 0;
-  for (const e of entries) {
-    if (e.jobName === name) {
-      hours += e.hours || 0;
-      pay += e.pay || 0;
-    }
-  }
-  return { hours, pay };
-}
-function ProjectsTab({ jobs, entries, post: post2, onChange }) {
-  const totals = useMemo(() => {
-    let revenue = 0, cost = 0, count = 0;
-    for (const j of jobs) {
-      const value = j.contractValue || 0;
-      if (value <= 0) continue;
-      const labor = laborForJob(j.name, entries).pay;
-      const mat = (j.materials || []).reduce((s, m) => s + (m.amount || 0), 0);
-      revenue += value;
-      cost += labor + mat;
-      count++;
-    }
-    const profit = revenue - cost;
-    return { revenue, cost, profit, margin: revenue > 0 ? profit / revenue * 100 : 0, count };
-  }, [jobs, entries]);
-  const sorted = useMemo(() => [...jobs].sort((a, b) => (b.contractValue || 0) - (a.contractValue || 0)), [jobs]);
-  const byType = useMemo(() => {
-    const m = /* @__PURE__ */ new Map();
-    for (const j of jobs) {
-      const value = j.contractValue || 0;
-      if (value <= 0) continue;
-      const type = (j.workType || "Other").trim() || "Other";
-      const labor = laborForJob(j.name, entries).pay;
-      const mat = (j.materials || []).reduce((s, x) => s + (x.amount || 0), 0);
-      const c = m.get(type) || { count: 0, revenue: 0, cost: 0 };
-      c.count++;
-      c.revenue += value;
-      c.cost += labor + mat;
-      m.set(type, c);
-    }
-    return Array.from(m.entries()).map(([type, d]) => ({ type, count: d.count, revenue: d.revenue, profit: d.revenue - d.cost, margin: d.revenue > 0 ? (d.revenue - d.cost) / d.revenue * 100 : 0 })).sort((a, b) => b.margin - a.margin);
-  }, [jobs, entries]);
-  const csv = () => {
-    const head = ["Project", "Status", "Contract Value", "Labor Hours", "Labor $", "Materials $", "Total Cost", "Profit", "Margin %"];
-    const rows = jobs.filter((j) => (j.contractValue || 0) > 0).map((j) => {
-      const l = laborForJob(j.name, entries);
-      const mat = (j.materials || []).reduce((s, m) => s + (m.amount || 0), 0);
-      const cost = l.pay + mat;
-      const value = j.contractValue || 0;
-      const profit = value - cost;
-      return [j.name, j.status || "active", value, l.hours.toFixed(2), Math.round(l.pay), Math.round(mat), Math.round(cost), Math.round(profit), (value > 0 ? profit / value * 100 : 0).toFixed(1)];
-    });
-    const esc = (v) => `"${String(v).replace(/"/g, '""')}"`;
-    const body = [head, ...rows].map((r) => r.map(esc).join(",")).join("\n");
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(new Blob([body], { type: "text/csv" }));
-    a.download = "randolph-projects-pnl.csv";
-    a.click();
-  };
-  return /* @__PURE__ */ jsxs("div", { className: "space-y-8", children: [
-    /* @__PURE__ */ jsx("p", { className: "text-on-surface-variant text-sm max-w-2xl", children: "Your money side, private to you. Add the contract value and materials for a job and the labor pulls straight from the time clock. Profit and margin add up automatically, and every job stays on file so you can look back years later." }),
-    /* @__PURE__ */ jsxs("div", { className: "grid grid-cols-2 md:grid-cols-4 gap-4", children: [
-      /* @__PURE__ */ jsx(Stat, { label: `Revenue (${totals.count})`, value: money(totals.revenue) }),
-      /* @__PURE__ */ jsx(Stat, { label: "Total Cost", value: money(totals.cost) }),
-      /* @__PURE__ */ jsx(Stat, { label: "Profit", value: money(totals.profit) }),
-      /* @__PURE__ */ jsx(Stat, { label: "Avg Margin", value: `${totals.margin.toFixed(0)}%` })
-    ] }),
-    byType.length > 0 && /* @__PURE__ */ jsxs("div", { className: "border-2 border-surface-container-highest", children: [
-      /* @__PURE__ */ jsx("div", { className: "bg-surface-container px-4 py-3 font-label-bold text-label-bold uppercase text-on-surface-variant tracking-widest", children: "Profit by Type of Work" }),
-      /* @__PURE__ */ jsx("div", { className: "overflow-x-auto", children: /* @__PURE__ */ jsxs("table", { className: "w-full text-sm", children: [
-        /* @__PURE__ */ jsx("thead", { className: "text-on-surface-variant uppercase text-xs tracking-wider", children: /* @__PURE__ */ jsx("tr", { children: ["Type of Work", "Jobs", "Revenue", "Profit", "Avg Margin"].map((h, i) => /* @__PURE__ */ jsx("th", { className: `p-3 font-label-bold ${i === 0 ? "text-left" : "text-right"}`, children: h }, h)) }) }),
-        /* @__PURE__ */ jsx("tbody", { children: byType.map((r) => /* @__PURE__ */ jsxs("tr", { className: "border-t border-surface-container-highest", children: [
-          /* @__PURE__ */ jsx("td", { className: "p-3 font-label-bold", children: r.type }),
-          /* @__PURE__ */ jsx("td", { className: "p-3 text-right", children: r.count }),
-          /* @__PURE__ */ jsx("td", { className: "p-3 text-right", children: money(r.revenue) }),
-          /* @__PURE__ */ jsx("td", { className: "p-3 text-right font-label-bold", style: { color: r.profit >= 0 ? "#5ec26a" : void 0 }, children: money(r.profit) }),
-          /* @__PURE__ */ jsxs("td", { className: "p-3 text-right font-label-bold text-primary", children: [
-            r.margin.toFixed(0),
-            "%"
-          ] })
-        ] }, r.type)) })
-      ] }) }),
-      /* @__PURE__ */ jsx("p", { className: "text-on-surface-variant/70 text-xs p-3", children: "Across all priced jobs. Shows which kind of work actually makes you money, so you know what to chase." })
-    ] }),
-    /* @__PURE__ */ jsx("div", { className: "flex justify-end", children: /* @__PURE__ */ jsx("button", { className: btn, onClick: csv, disabled: totals.count === 0, children: "Export P&L CSV" }) }),
-    /* @__PURE__ */ jsxs("div", { className: "space-y-4", children: [
-      jobs.length === 0 && /* @__PURE__ */ jsx("p", { className: "text-on-surface-variant", children: "No jobs yet. Add one under the Jobs tab first." }),
-      sorted.map((j) => /* @__PURE__ */ jsx(ProjectCard, { job: j, labor: laborForJob(j.name, entries), post: post2, onChange }, j.id))
-    ] })
-  ] });
-}
-function ProjectCard({ job, labor, post: post2, onChange }) {
-  const [value, setValue] = useState(job.contractValue ? String(job.contractValue) : "");
-  const [materials, setMaterials] = useState(job.materials?.length ? job.materials.map((m) => ({ ...m })) : []);
-  const [estH, setEstH] = useState(job.estHours ? String(job.estHours) : "");
-  const [estL, setEstL] = useState(job.estLabor ? String(job.estLabor) : "");
-  const [estM, setEstM] = useState(job.estMaterials ? String(job.estMaterials) : "");
-  const [busy, setBusy] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const matTotal = materials.reduce((s, m) => s + (Number(m.amount) || 0), 0);
-  const v = Number(value) || 0;
-  const cost = labor.pay + matTotal;
-  const profit = v - cost;
-  const margin = v > 0 ? profit / v * 100 : 0;
-  const eH = Number(estH) || 0, eL = Number(estL) || 0, eM = Number(estM) || 0;
-  const estCost = eL + eM;
-  const estMargin = v > 0 ? (v - estCost) / v * 100 : 0;
-  const hasBid = eH > 0 || eL > 0 || eM > 0;
-  const addLine = () => setMaterials([...materials, { desc: "", amount: 0 }]);
-  const setLine = (i, patch) => setMaterials(materials.map((m, idx) => idx === i ? { ...m, ...patch } : m));
-  const rmLine = (i) => setMaterials(materials.filter((_, idx) => idx !== i));
-  const save = async () => {
-    setBusy(true);
-    try {
-      await post2({ action: "save-job", job: { id: job.id, contractValue: v, materials: materials.map((m) => ({ desc: m.desc, amount: Number(m.amount) || 0 })), estHours: eH, estLabor: eL, estMaterials: eM } });
-      setSaved(true);
-      setTimeout(() => setSaved(false), 1600);
-      onChange();
-    } finally {
-      setBusy(false);
-    }
-  };
-  const status = job.status || "active";
-  const mInput = "bg-surface-container border-b border-surface-container-highest p-2 text-on-surface focus:border-primary focus:outline-none w-full";
-  return /* @__PURE__ */ jsxs("div", { className: "bg-surface-container-lowest border-2 border-surface-container-highest", children: [
-    /* @__PURE__ */ jsxs("div", { className: "flex items-center justify-between gap-3 px-5 py-4 border-b border-surface-container-highest", children: [
-      /* @__PURE__ */ jsxs("div", { className: "font-headline-md text-headline-md uppercase", children: [
-        job.customer || job.name,
-        job.workType ? ` · ${job.workType}` : ""
-      ] }),
-      /* @__PURE__ */ jsx("span", { className: `text-[10px] font-label-bold uppercase tracking-wider px-2 py-0.5 ${JOB_STATUS_META[status].cls}`, children: JOB_STATUS_META[status].label })
-    ] }),
-    /* @__PURE__ */ jsxs("div", { className: "px-5 py-2", children: [
-      /* @__PURE__ */ jsxs("div", { className: "flex items-center justify-between gap-4 py-3 border-b border-surface-container-highest", children: [
-        /* @__PURE__ */ jsxs("label", { className: "text-on-surface", children: [
-          "Contract value ",
-          /* @__PURE__ */ jsx("span", { className: "text-on-surface-variant text-xs", children: "(approved estimate)" })
-        ] }),
-        /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-1 w-40", children: [
-          /* @__PURE__ */ jsx("span", { className: "text-on-surface-variant", children: "$" }),
-          /* @__PURE__ */ jsx("input", { className: mInput, inputMode: "decimal", value, onChange: (e) => setValue(e.target.value.replace(/[^0-9.]/g, "")), placeholder: "0" })
-        ] })
-      ] }),
-      /* @__PURE__ */ jsxs("div", { className: "py-3 border-b border-surface-container-highest", children: [
-        /* @__PURE__ */ jsxs("div", { className: "text-on-surface mb-2", children: [
-          "Your bid ",
-          /* @__PURE__ */ jsx("span", { className: "text-on-surface-variant text-xs", children: "(what you estimated, optional)" })
-        ] }),
-        /* @__PURE__ */ jsxs("div", { className: "grid grid-cols-3 gap-2", children: [
-          /* @__PURE__ */ jsxs("div", { children: [
-            /* @__PURE__ */ jsx("div", { className: "text-on-surface-variant text-xs mb-1", children: "Est. hours" }),
-            /* @__PURE__ */ jsx("input", { className: mInput, inputMode: "decimal", value: estH, onChange: (e) => setEstH(e.target.value.replace(/[^0-9.]/g, "")), placeholder: "0" })
-          ] }),
-          /* @__PURE__ */ jsxs("div", { children: [
-            /* @__PURE__ */ jsx("div", { className: "text-on-surface-variant text-xs mb-1", children: "Est. labor $" }),
-            /* @__PURE__ */ jsx("input", { className: mInput, inputMode: "decimal", value: estL, onChange: (e) => setEstL(e.target.value.replace(/[^0-9.]/g, "")), placeholder: "0" })
-          ] }),
-          /* @__PURE__ */ jsxs("div", { children: [
-            /* @__PURE__ */ jsx("div", { className: "text-on-surface-variant text-xs mb-1", children: "Est. materials $" }),
-            /* @__PURE__ */ jsx("input", { className: mInput, inputMode: "decimal", value: estM, onChange: (e) => setEstM(e.target.value.replace(/[^0-9.]/g, "")), placeholder: "0" })
-          ] })
-        ] })
-      ] }),
-      /* @__PURE__ */ jsxs("div", { className: "flex items-center justify-between py-3 border-b border-surface-container-highest", children: [
-        /* @__PURE__ */ jsxs("span", { className: "text-on-surface", children: [
-          "Labor ",
-          /* @__PURE__ */ jsxs("span", { className: "text-primary text-xs", children: [
-            "· ",
-            labor.hours.toFixed(1),
-            " hrs, from the time clock"
-          ] })
-        ] }),
-        /* @__PURE__ */ jsx("span", { className: "font-label-bold", children: money(labor.pay) })
-      ] }),
-      /* @__PURE__ */ jsxs("div", { className: "py-3 border-b border-surface-container-highest", children: [
-        /* @__PURE__ */ jsxs("div", { className: "flex items-center justify-between mb-2", children: [
-          /* @__PURE__ */ jsxs("span", { className: "text-on-surface", children: [
-            "Materials ",
-            /* @__PURE__ */ jsx("span", { className: "text-on-surface-variant text-xs", children: "(itemized)" })
-          ] }),
-          /* @__PURE__ */ jsx("span", { className: "font-label-bold", children: money(matTotal) })
-        ] }),
-        /* @__PURE__ */ jsxs("div", { className: "space-y-2", children: [
-          materials.map((m, i) => /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-2", children: [
-            /* @__PURE__ */ jsx("input", { className: `${mInput} flex-1`, value: m.desc, onChange: (e) => setLine(i, { desc: e.target.value }), placeholder: "e.g. Block & stone" }),
-            /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-1 w-32", children: [
-              /* @__PURE__ */ jsx("span", { className: "text-on-surface-variant", children: "$" }),
-              /* @__PURE__ */ jsx("input", { className: mInput, inputMode: "decimal", value: m.amount || "", onChange: (e) => setLine(i, { amount: Number(e.target.value.replace(/[^0-9.]/g, "")) || 0 }), placeholder: "0" })
-            ] }),
-            /* @__PURE__ */ jsx("button", { type: "button", onClick: () => rmLine(i), className: "text-on-surface-variant hover:text-error text-sm px-1", "aria-label": "Remove line item", children: "✕" })
-          ] }, i)),
-          /* @__PURE__ */ jsx("button", { type: "button", onClick: addLine, className: "text-primary text-sm font-label-bold hover:underline", children: "+ Add line item" })
-        ] })
-      ] }),
-      /* @__PURE__ */ jsxs("div", { className: "flex items-center justify-between py-3", children: [
-        /* @__PURE__ */ jsxs("span", { className: "text-on-surface", children: [
-          "Total cost ",
-          /* @__PURE__ */ jsx("span", { className: "text-on-surface-variant text-xs", children: "(labor + materials)" })
-        ] }),
-        /* @__PURE__ */ jsx("span", { className: "font-label-bold", children: money(cost) })
-      ] }),
-      hasBid && /* @__PURE__ */ jsxs("div", { className: "mt-1 mb-3 border border-surface-container-highest text-sm", children: [
-        /* @__PURE__ */ jsxs("div", { className: "grid grid-cols-4 bg-surface-container text-on-surface-variant text-[10px] uppercase tracking-wider", children: [
-          /* @__PURE__ */ jsx("div", { className: "p-2", children: "Bid vs actual" }),
-          /* @__PURE__ */ jsx("div", { className: "p-2 text-right", children: "Bid" }),
-          /* @__PURE__ */ jsx("div", { className: "p-2 text-right", children: "Actual" }),
-          /* @__PURE__ */ jsx("div", { className: "p-2 text-right", children: "Off by" })
-        ] }),
-        eH > 0 && /* @__PURE__ */ jsxs("div", { className: "grid grid-cols-4 border-t border-surface-container-highest", children: [
-          /* @__PURE__ */ jsx("div", { className: "p-2 text-on-surface-variant", children: "Hours" }),
-          /* @__PURE__ */ jsx("div", { className: "p-2 text-right", children: eH.toFixed(0) }),
-          /* @__PURE__ */ jsx("div", { className: "p-2 text-right text-on-surface", children: labor.hours.toFixed(1) }),
-          /* @__PURE__ */ jsxs("div", { className: `p-2 text-right font-label-bold ${labor.hours - eH > 0 ? "text-error" : "text-[#5ec26a]"}`, children: [
-            labor.hours - eH > 0 ? "+" : "",
-            (labor.hours - eH).toFixed(1),
-            " hrs"
-          ] })
-        ] }),
-        /* @__PURE__ */ jsxs("div", { className: "grid grid-cols-4 border-t border-surface-container-highest", children: [
-          /* @__PURE__ */ jsx("div", { className: "p-2 text-on-surface-variant", children: "Cost" }),
-          /* @__PURE__ */ jsx("div", { className: "p-2 text-right", children: money(estCost) }),
-          /* @__PURE__ */ jsx("div", { className: "p-2 text-right text-on-surface", children: money(cost) }),
-          /* @__PURE__ */ jsxs("div", { className: `p-2 text-right font-label-bold ${cost - estCost > 0 ? "text-error" : "text-[#5ec26a]"}`, children: [
-            cost - estCost >= 0 ? "+" : "-",
-            money(Math.abs(cost - estCost))
-          ] })
-        ] }),
-        v > 0 && /* @__PURE__ */ jsxs("div", { className: "grid grid-cols-4 border-t border-surface-container-highest bg-[#15110f]", children: [
-          /* @__PURE__ */ jsx("div", { className: "p-2 text-on-surface font-label-bold", children: "Margin" }),
-          /* @__PURE__ */ jsxs("div", { className: "p-2 text-right text-[#5ec26a]", children: [
-            estMargin.toFixed(0),
-            "%"
-          ] }),
-          /* @__PURE__ */ jsxs("div", { className: "p-2 text-right font-label-bold text-primary", children: [
-            margin.toFixed(0),
-            "%"
-          ] }),
-          /* @__PURE__ */ jsxs("div", { className: `p-2 text-right font-label-bold ${margin - estMargin < 0 ? "text-error" : "text-[#5ec26a]"}`, children: [
-            margin - estMargin >= 0 ? "+" : "",
-            (margin - estMargin).toFixed(0),
-            " pts"
-          ] })
-        ] })
-      ] })
-    ] }),
-    /* @__PURE__ */ jsxs("div", { className: "flex items-center justify-between gap-3 px-5 py-4 border-t border-surface-container-highest bg-[#15110f]", children: [
-      /* @__PURE__ */ jsxs("div", { children: [
-        /* @__PURE__ */ jsx("div", { className: "text-label-bold uppercase text-on-surface-variant text-[10px] tracking-widest", children: "Profit" }),
-        v > 0 ? /* @__PURE__ */ jsx("div", { className: `font-display-lg text-3xl ${profit >= 0 ? "text-[#5ec26a]" : "text-error"}`, children: money(profit) }) : /* @__PURE__ */ jsx("div", { className: "text-on-surface-variant text-sm pt-2", children: "Add a contract value" })
-      ] }),
-      /* @__PURE__ */ jsxs("div", { className: "text-right", children: [
-        /* @__PURE__ */ jsx("div", { className: "text-label-bold uppercase text-on-surface-variant text-[10px] tracking-widest", children: "Margin" }),
-        /* @__PURE__ */ jsx("div", { className: "font-display-lg text-3xl text-primary", children: v > 0 ? `${margin.toFixed(0)}%` : "" })
-      ] }),
-      /* @__PURE__ */ jsx("button", { className: btn, disabled: busy, onClick: save, children: busy ? "Saving…" : saved ? "Saved" : "Save" })
-    ] })
-  ] });
-}
-function SettingsTab({ post: post2, weekStartDay, onChange }) {
-  const [newPin, setNewPin] = useState("");
-  const [msg, setMsg] = useState("");
-  const [err, setErr] = useState("");
-  const savePin = async (e) => {
-    e.preventDefault();
-    setErr("");
-    setMsg("");
-    try {
-      await post2({ action: "set-admin-pin", newPin });
-      setMsg("Admin PIN updated.");
-      setNewPin("");
-    } catch (e2) {
-      setErr(e2.message);
-    }
-  };
-  const [wd, setWd] = useState(String(weekStartDay));
-  const [wmsg, setWmsg] = useState("");
-  const [werr, setWerr] = useState("");
-  const saveWeek = async (e) => {
-    e.preventDefault();
-    setWerr("");
-    setWmsg("");
-    try {
-      await post2({ action: "set-week-start", weekStartDay: Number(wd) });
-      setWmsg(`Workweek now starts ${DAYS[Number(wd)]}.`);
-      onChange();
-    } catch (e2) {
-      setWerr(e2.message);
-    }
-  };
-  return /* @__PURE__ */ jsxs("div", { className: "grid md:grid-cols-2 gap-8 max-w-3xl", children: [
-    /* @__PURE__ */ jsxs("form", { onSubmit: savePin, className: "bg-surface-container-lowest p-6 border-2 border-surface-container-highest space-y-5 h-fit", children: [
-      /* @__PURE__ */ jsx("h3", { className: "font-headline-md text-headline-md uppercase", children: "Change Admin PIN" }),
-      /* @__PURE__ */ jsxs("div", { children: [
-        /* @__PURE__ */ jsx("label", { className: label, children: "New 4-Digit PIN" }),
-        /* @__PURE__ */ jsx("input", { className: `${input} tracking-[0.4em]`, inputMode: "numeric", maxLength: 4, value: newPin, onChange: (e) => setNewPin(e.target.value.replace(/\D/g, "")), placeholder: "0000" })
-      ] }),
-      msg && /* @__PURE__ */ jsx("p", { className: "text-primary text-sm font-label-bold", children: msg }),
-      err && /* @__PURE__ */ jsx("p", { className: "text-error text-sm font-label-bold", children: err }),
-      /* @__PURE__ */ jsx("button", { className: btn, children: "Update PIN" })
-    ] }),
-    /* @__PURE__ */ jsxs("form", { onSubmit: saveWeek, className: "bg-surface-container-lowest p-6 border-2 border-surface-container-highest space-y-5 h-fit", children: [
-      /* @__PURE__ */ jsx("h3", { className: "font-headline-md text-headline-md uppercase", children: "Workweek for Overtime" }),
-      /* @__PURE__ */ jsx("p", { className: "text-on-surface-variant text-sm", children: "Overtime pays 1.5× for hours over 40 in a week. Pick the day your pay week starts so the totals match your payroll." }),
-      /* @__PURE__ */ jsxs("div", { children: [
-        /* @__PURE__ */ jsx("label", { className: label, children: "Week Starts On" }),
-        /* @__PURE__ */ jsx("select", { className: input, value: wd, onChange: (e) => setWd(e.target.value), children: DAYS.map((d, i) => /* @__PURE__ */ jsx("option", { value: i, children: d }, i)) })
-      ] }),
-      wmsg && /* @__PURE__ */ jsx("p", { className: "text-primary text-sm font-label-bold", children: wmsg }),
-      werr && /* @__PURE__ */ jsx("p", { className: "text-error text-sm font-label-bold", children: werr }),
-      /* @__PURE__ */ jsx("button", { className: btn, children: "Save Workweek" })
-    ] })
   ] });
 }
 const buttonVariants = cva(
