@@ -157,9 +157,17 @@ export default async (req) => {
   if (a === 'admin-entries') return ok({ entries: await listEntries(s) })
   if (a === 'save-employee') {
     const e = body.employee || {}
-    if (!e.name || !/^\d{4}$/.test(String(e.pin || ''))) return bad('Name and a 4-digit PIN are required.')
-    const rec = { id: e.id || id(), name: e.name.trim(), rate: Number(e.rate) || 0, pin: String(e.pin), active: e.active !== false }
-    const list = employees.filter((x) => x.id !== rec.id); list.push(rec)
+    // Merge with the existing record so an edit keeps the same id (and login link) and anything not sent.
+    const existing = e.id ? employees.find((x) => x.id === e.id) : null
+    if (e.id && !existing) return bad('That crew member is no longer on the list. Refresh and try again.', 404)
+    const name = String(e.name ?? existing?.name ?? '').trim()
+    const pin = String(e.pin ?? existing?.pin ?? '')
+    const rate = Number(e.rate ?? existing?.rate ?? 0)
+    if (!name || !/^\d{4}$/.test(pin)) return bad('Name and a 4-digit PIN are required.')
+    if (!Number.isFinite(rate) || rate < 0) return bad('Enter an hourly rate.')
+    const rec = { id: existing ? existing.id : id(), name, rate: Math.round(rate * 100) / 100, pin, active: (e.active ?? existing?.active) !== false }
+    // Replace in place so the crew list keeps its order.
+    const list = existing ? employees.map((x) => (x.id === rec.id ? rec : x)) : [...employees, rec]
     await s.setJSON('employees', list)
     return ok({ ok: true, employees: list })
   }

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Nav from "@/components/Nav";
 import Footer from "@/components/Footer";
 
@@ -60,7 +60,9 @@ export default function TimeClockAdmin() {
     const a = await post({ action: "admin-bootstrap" });
     setEmployees(a.employees || []); setJobs(a.jobs || []); setWeekStartDay(a.weekStartDay ?? 0); setLockedThrough(a.lockedThrough ?? null);
     const e = await post({ action: "admin-entries" });
-    setEntries(e.entries || []);
+    // Show every shift under the crew member's current name, so renaming someone never splits their week (and their overtime) in two.
+    const nameById = new Map<string, string>((a.employees || []).map((x: Emp) => [x.id, x.name]));
+    setEntries((e.entries || []).map((x: Entry) => ({ ...x, employeeName: (x.employeeId && nameById.get(x.employeeId)) || x.employeeName })));
   };
 
   useEffect(() => { window.scrollTo(0, 0); document.title = "Time Clock Admin | Randolph Construction"; }, []);
@@ -308,7 +310,7 @@ function EntriesTab({ entries, jobs, lockedThrough, post, onChange }: { entries:
       {editing && (
         <div className="fixed inset-0 z-[100] bg-black/70 flex items-center justify-center p-4" onClick={() => setEditing(null)}>
           <form onClick={(ev) => ev.stopPropagation()} onSubmit={saveEdit} className="bg-surface-container-lowest border-2 border-primary p-6 w-full max-w-md space-y-4 max-h-[90vh] overflow-y-auto">
-            <h3 className="font-headline-md text-headline-md uppercase">Edit Entry — {editing.employeeName}</h3>
+            <h3 className="font-headline-md text-headline-md uppercase">Edit Entry: {editing.employeeName}</h3>
             <div><label className={label}>Date</label><input type="date" className={input} value={editing.date} onChange={(ev) => setEditing({ ...editing, date: ev.target.value })} /></div>
             <div className="grid grid-cols-2 gap-3">
               <div><label className={label}>Clock In</label><input type="time" className={input} value={editing.clockIn} onChange={(ev) => setEditing({ ...editing, clockIn: ev.target.value })} /></div>
@@ -420,52 +422,107 @@ function RollUp({ title, rows }: { title: string; rows: [string, { hours: number
 }
 
 /* ---------------- Crew ---------------- */
-function CrewTab({ employees, post, onChange }: { employees: Emp[]; post: PostFn; onChange: () => void }) {
-  const blank = { id: "", name: "", rate: "", pin: "" };
-  const [f, setF] = useState<{ id: string; name: string; rate: string; pin: string }>(blank);
+type CrewForm = { name: string; rate: string; pin: string };
+const blankCrew: CrewForm = { name: "", rate: "", pin: "" };
+// Returns what's wrong with the form, or "" when it's good to save.
+function crewFormError(f: CrewForm) {
+  if (!f.name.trim()) return "Enter a name.";
+  if (f.rate.trim() === "" || !(Number(f.rate) >= 0)) return "Enter an hourly rate.";
+  if (!/^\d{4}$/.test(f.pin)) return "PIN must be 4 digits.";
+  return "";
+}
+
+function CrewFields({ f, setF, idPrefix, autoFocus }: { f: CrewForm; setF: (f: CrewForm) => void; idPrefix: string; autoFocus?: boolean }) {
+  return (
+    <>
+      <div><label className={label} htmlFor={`${idPrefix}-name`}>Name</label><input id={`${idPrefix}-name`} className={input} autoFocus={autoFocus} autoComplete="off" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></div>
+      <div><label className={label} htmlFor={`${idPrefix}-rate`}>Hourly Rate ($)</label><input id={`${idPrefix}-rate`} className={input} inputMode="decimal" autoComplete="off" value={f.rate} onChange={(e) => setF({ ...f, rate: e.target.value.replace(/[^0-9.]/g, "") })} placeholder="25" /></div>
+      <div><label className={label} htmlFor={`${idPrefix}-pin`}>4-Digit PIN</label><input id={`${idPrefix}-pin`} className={`${input} tracking-[0.4em]`} inputMode="numeric" autoComplete="off" maxLength={4} value={f.pin} onChange={(e) => setF({ ...f, pin: e.target.value.replace(/\D/g, "") })} placeholder="0000" /></div>
+    </>
+  );
+}
+
+function CrewTab({ employees, post, onChange }: { employees: Emp[]; post: PostFn; onChange: () => void | Promise<void> }) {
+  // Adding a new person uses the form on the left. Editing happens inside that person's own card,
+  // so the fields open right where the Edit button was tapped (the old shared form sat off screen on a phone).
+  const [f, setF] = useState<CrewForm>(blankCrew);
   const [err, setErr] = useState("");
+  const [editId, setEditId] = useState("");
+  const [ef, setEf] = useState<CrewForm>(blankCrew);
+  const [editErr, setEditErr] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [savedId, setSavedId] = useState("");
   const [copied, setCopied] = useState("");
   const copy = async (id: string, text: string) => {
     try { await navigator.clipboard.writeText(text); } catch { /* clipboard unavailable */ }
     setCopied(id); setTimeout(() => setCopied(""), 1500);
   };
 
-  const save = async (e: React.FormEvent) => {
-    e.preventDefault(); setErr("");
+  const add = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const problem = crewFormError(f);
+    setErr(problem);
+    if (problem) return;
     try {
-      await post({ action: "save-employee", employee: { id: f.id || undefined, name: f.name, rate: Number(f.rate), pin: f.pin } });
-      setF(blank); onChange();
+      await post({ action: "save-employee", employee: { name: f.name, rate: Number(f.rate), pin: f.pin } });
+      setF(blankCrew); await onChange();
     } catch (e2) { setErr((e2 as Error).message); }
   };
-  const del = async (id: string) => { if (confirm("Remove this person?")) { await post({ action: "delete-employee", id }); onChange(); } };
+
+  const startEdit = (e: Emp) => { setEditId(e.id); setEf({ name: e.name, rate: String(e.rate), pin: e.pin }); setEditErr(""); };
+  const saveEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const problem = crewFormError(ef);
+    setEditErr(problem);
+    if (problem) return;
+    setBusy(true);
+    try {
+      await post({ action: "save-employee", employee: { id: editId, name: ef.name, rate: Number(ef.rate), pin: ef.pin } });
+      await onChange();
+      setSavedId(editId); setTimeout(() => setSavedId(""), 2500);
+      setEditId("");
+    } catch (e2) { setEditErr((e2 as Error).message); }
+    finally { setBusy(false); }
+  };
+  const del = async (id: string) => { if (confirm("Remove this person?")) { await post({ action: "delete-employee", id }); if (editId === id) setEditId(""); onChange(); } };
 
   return (
     <div className="grid md:grid-cols-2 gap-8">
-      <form onSubmit={save} className="bg-surface-container-lowest p-6 border-2 border-surface-container-highest space-y-5 h-fit">
-        <h3 className="font-headline-md text-headline-md uppercase">{f.id ? "Edit Crew Member" : "Add Crew Member"}</h3>
-        <div><label className={label}>Name</label><input className={input} value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></div>
-        <div><label className={label}>Hourly Rate ($)</label><input className={input} inputMode="decimal" value={f.rate} onChange={(e) => setF({ ...f, rate: e.target.value })} placeholder="25" /></div>
-        <div><label className={label}>4-Digit PIN</label><input className={`${input} tracking-[0.4em]`} inputMode="numeric" maxLength={4} value={f.pin} onChange={(e) => setF({ ...f, pin: e.target.value.replace(/\D/g, "") })} placeholder="0000" /></div>
-        {err && <p className="text-error text-sm font-label-bold">{err}</p>}
-        <div className="flex gap-3">
-          <button className={btn}>{f.id ? "Save Changes" : "Add Member"}</button>
-          {f.id && <button type="button" className={btnGhost} onClick={() => setF(blank)}>Cancel</button>}
-        </div>
+      <form onSubmit={add} className="bg-surface-container-lowest p-6 border-2 border-surface-container-highest space-y-5 h-fit">
+        <h3 className="font-headline-md text-headline-md uppercase">Add Crew Member</h3>
+        <CrewFields f={f} setF={setF} idPrefix="crew-add" />
+        {err && <p role="alert" className="text-error text-sm font-label-bold">{err}</p>}
+        <button className={btn}>Add Member</button>
       </form>
 
       <div className="space-y-3">
         {employees.length === 0 && <p className="text-on-surface-variant">No crew yet. Add your first person.</p>}
         {employees.map((e) => {
           const link = `${typeof window !== "undefined" ? window.location.origin : ""}/employee?u=${e.id}`;
+          if (editId === e.id) {
+            return (
+              <form key={e.id} onSubmit={saveEdit} className="bg-surface-container-lowest p-4 border-2 border-primary space-y-4">
+                <h3 className="font-headline-md text-headline-md uppercase">Edit {e.name}</h3>
+                <CrewFields f={ef} setF={setEf} idPrefix={`crew-edit-${e.id}`} autoFocus />
+                {editErr && <p role="alert" className="text-error text-sm font-label-bold">{editErr}</p>}
+                <div className="flex gap-3">
+                  <button className={btn} disabled={busy}>{busy ? "Saving…" : "Save Changes"}</button>
+                  <button type="button" className={btnGhost} disabled={busy} onClick={() => setEditId("")}>Cancel</button>
+                </div>
+                <p className="text-on-surface-variant/70 text-xs">A new rate applies to shifts logged from now on. Shifts already on the books keep the rate they were logged at. Their login link stays the same.</p>
+              </form>
+            );
+          }
           return (
             <div key={e.id} className="bg-surface-container-lowest p-4 border-2 border-surface-container-highest space-y-3">
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <div className="font-headline-md text-headline-md">{e.name}</div>
                   <div className="text-on-surface-variant text-sm">${e.rate}/hr · PIN {e.pin}</div>
+                  {savedId === e.id && <div role="status" className="text-primary text-xs font-label-bold uppercase tracking-widest mt-1">Changes saved</div>}
                 </div>
                 <div className="flex gap-2 shrink-0">
-                  <button className={btnGhost} onClick={() => setF({ id: e.id, name: e.name, rate: String(e.rate), pin: e.pin })}>Edit</button>
+                  <button className={btnGhost} onClick={() => startEdit(e)}>Edit</button>
                   <button className="text-on-surface-variant hover:text-error text-xs underline" onClick={() => del(e.id)}>Remove</button>
                 </div>
               </div>
@@ -473,7 +530,7 @@ function CrewTab({ employees, post, onChange }: { employees: Emp[]; post: PostFn
                 <input readOnly value={link} onFocus={(ev) => ev.currentTarget.select()} className="flex-1 min-w-0 bg-transparent text-on-surface-variant text-xs outline-none" />
                 <button type="button" onClick={() => copy(e.id, link)} className="shrink-0 bg-primary-container text-on-primary-container font-label-bold text-xs uppercase px-3 py-1.5 metallic-gradient beveled-edge">{copied === e.id ? "Copied!" : "Copy link"}</button>
               </div>
-              <p className="text-on-surface-variant/70 text-xs">Text this link to {e.name.split(" ")[0]} — it opens straight to their name; they just enter PIN {e.pin}.</p>
+              <p className="text-on-surface-variant/70 text-xs">Text this link to {e.name.split(" ")[0]}. It opens straight to their name, and they just enter PIN {e.pin}.</p>
             </div>
           );
         })}
@@ -493,7 +550,13 @@ function JobsTab({ jobs, entries, post, onChange }: { jobs: Job[]; entries: Entr
     catch (e2) { setErr((e2 as Error).message); }
   };
   // For older jobs saved before this split, drop the old name into Customer so it can be tidied up.
-  const editJob = (j: Job) => setF({ id: j.id, customer: j.customer || (j.workType ? "" : j.name || ""), workType: j.workType || "", address: j.address || "", status: j.status || "active" });
+  const formRef = useRef<HTMLFormElement>(null);
+  const editJob = (j: Job) => {
+    setF({ id: j.id, customer: j.customer || (j.workType ? "" : j.name || ""), workType: j.workType || "", address: j.address || "", status: j.status || "active" });
+    // The form sits above the job list on a phone, so bring it into view or Edit looks like it did nothing.
+    formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    formRef.current?.querySelector("input")?.focus({ preventScroll: true });
+  };
   // Quick status change from the job card (merges server-side, so only status changes).
   const setStatus = async (j: Job, status: JobStatus) => { await post({ action: "save-job", job: { id: j.id, status } }); onChange(); };
   const del = async (id: string) => { if (confirm("Remove this job? Its logged hours stay in your records.")) { await post({ action: "delete-job", id }); if (f.id === id) setF(blank); onChange(); } };
@@ -515,7 +578,7 @@ function JobsTab({ jobs, entries, post, onChange }: { jobs: Job[]; entries: Entr
 
   return (
     <div className="grid md:grid-cols-2 gap-8">
-      <form onSubmit={save} className="bg-surface-container-lowest p-6 border-2 border-surface-container-highest space-y-5 h-fit">
+      <form ref={formRef} onSubmit={save} className="bg-surface-container-lowest p-6 border-2 border-surface-container-highest space-y-5 h-fit scroll-mt-32">
         <h3 className="font-headline-md text-headline-md uppercase">{f.id ? "Edit Job" : "Add a Job"}</h3>
         <p className="text-on-surface-variant text-sm">Only <strong className="text-primary">Active</strong> jobs show in the crew's dropdown. Future and Finished jobs are hidden from them, so their list stays short.</p>
         <div><label className={label}>Customer</label><input className={input} value={f.customer} onChange={(e) => setF({ ...f, customer: e.target.value })} placeholder="e.g. Chick-fil-A or Mr. Smith" /></div>

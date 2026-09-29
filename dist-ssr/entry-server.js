@@ -2889,7 +2889,8 @@ function TimeClockAdmin() {
     setWeekStartDay(a.weekStartDay ?? 0);
     setLockedThrough(a.lockedThrough ?? null);
     const e = await post2({ action: "admin-entries" });
-    setEntries(e.entries || []);
+    const nameById = new Map((a.employees || []).map((x) => [x.id, x.name]));
+    setEntries((e.entries || []).map((x) => ({ ...x, employeeName: x.employeeId && nameById.get(x.employeeId) || x.employeeName })));
   };
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -3145,7 +3146,7 @@ function EntriesTab({ entries, jobs, lockedThrough, post: post2, onChange }) {
   return /* @__PURE__ */ jsxs("div", { className: "space-y-8", children: [
     editing && /* @__PURE__ */ jsx("div", { className: "fixed inset-0 z-[100] bg-black/70 flex items-center justify-center p-4", onClick: () => setEditing(null), children: /* @__PURE__ */ jsxs("form", { onClick: (ev) => ev.stopPropagation(), onSubmit: saveEdit, className: "bg-surface-container-lowest border-2 border-primary p-6 w-full max-w-md space-y-4 max-h-[90vh] overflow-y-auto", children: [
       /* @__PURE__ */ jsxs("h3", { className: "font-headline-md text-headline-md uppercase", children: [
-        "Edit Entry — ",
+        "Edit Entry: ",
         editing.employeeName
       ] }),
       /* @__PURE__ */ jsxs("div", { children: [
@@ -3279,10 +3280,37 @@ function RollUp({ title, rows }) {
     ] }, k))
   ] });
 }
+const blankCrew = { name: "", rate: "", pin: "" };
+function crewFormError(f) {
+  if (!f.name.trim()) return "Enter a name.";
+  if (f.rate.trim() === "" || !(Number(f.rate) >= 0)) return "Enter an hourly rate.";
+  if (!/^\d{4}$/.test(f.pin)) return "PIN must be 4 digits.";
+  return "";
+}
+function CrewFields({ f, setF, idPrefix, autoFocus }) {
+  return /* @__PURE__ */ jsxs(Fragment, { children: [
+    /* @__PURE__ */ jsxs("div", { children: [
+      /* @__PURE__ */ jsx("label", { className: label, htmlFor: `${idPrefix}-name`, children: "Name" }),
+      /* @__PURE__ */ jsx("input", { id: `${idPrefix}-name`, className: input, autoFocus, autoComplete: "off", value: f.name, onChange: (e) => setF({ ...f, name: e.target.value }) })
+    ] }),
+    /* @__PURE__ */ jsxs("div", { children: [
+      /* @__PURE__ */ jsx("label", { className: label, htmlFor: `${idPrefix}-rate`, children: "Hourly Rate ($)" }),
+      /* @__PURE__ */ jsx("input", { id: `${idPrefix}-rate`, className: input, inputMode: "decimal", autoComplete: "off", value: f.rate, onChange: (e) => setF({ ...f, rate: e.target.value.replace(/[^0-9.]/g, "") }), placeholder: "25" })
+    ] }),
+    /* @__PURE__ */ jsxs("div", { children: [
+      /* @__PURE__ */ jsx("label", { className: label, htmlFor: `${idPrefix}-pin`, children: "4-Digit PIN" }),
+      /* @__PURE__ */ jsx("input", { id: `${idPrefix}-pin`, className: `${input} tracking-[0.4em]`, inputMode: "numeric", autoComplete: "off", maxLength: 4, value: f.pin, onChange: (e) => setF({ ...f, pin: e.target.value.replace(/\D/g, "") }), placeholder: "0000" })
+    ] })
+  ] });
+}
 function CrewTab({ employees, post: post2, onChange }) {
-  const blank = { id: "", name: "", rate: "", pin: "" };
-  const [f, setF] = useState(blank);
+  const [f, setF] = useState(blankCrew);
   const [err, setErr] = useState("");
+  const [editId, setEditId] = useState("");
+  const [ef, setEf] = useState(blankCrew);
+  const [editErr, setEditErr] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [savedId, setSavedId] = useState("");
   const [copied, setCopied] = useState("");
   const copy = async (id, text) => {
     try {
@@ -3292,48 +3320,75 @@ function CrewTab({ employees, post: post2, onChange }) {
     setCopied(id);
     setTimeout(() => setCopied(""), 1500);
   };
-  const save = async (e) => {
+  const add = async (e) => {
     e.preventDefault();
-    setErr("");
+    const problem = crewFormError(f);
+    setErr(problem);
+    if (problem) return;
     try {
-      await post2({ action: "save-employee", employee: { id: f.id || void 0, name: f.name, rate: Number(f.rate), pin: f.pin } });
-      setF(blank);
-      onChange();
+      await post2({ action: "save-employee", employee: { name: f.name, rate: Number(f.rate), pin: f.pin } });
+      setF(blankCrew);
+      await onChange();
     } catch (e2) {
       setErr(e2.message);
+    }
+  };
+  const startEdit = (e) => {
+    setEditId(e.id);
+    setEf({ name: e.name, rate: String(e.rate), pin: e.pin });
+    setEditErr("");
+  };
+  const saveEdit = async (e) => {
+    e.preventDefault();
+    const problem = crewFormError(ef);
+    setEditErr(problem);
+    if (problem) return;
+    setBusy(true);
+    try {
+      await post2({ action: "save-employee", employee: { id: editId, name: ef.name, rate: Number(ef.rate), pin: ef.pin } });
+      await onChange();
+      setSavedId(editId);
+      setTimeout(() => setSavedId(""), 2500);
+      setEditId("");
+    } catch (e2) {
+      setEditErr(e2.message);
+    } finally {
+      setBusy(false);
     }
   };
   const del = async (id) => {
     if (confirm("Remove this person?")) {
       await post2({ action: "delete-employee", id });
+      if (editId === id) setEditId("");
       onChange();
     }
   };
   return /* @__PURE__ */ jsxs("div", { className: "grid md:grid-cols-2 gap-8", children: [
-    /* @__PURE__ */ jsxs("form", { onSubmit: save, className: "bg-surface-container-lowest p-6 border-2 border-surface-container-highest space-y-5 h-fit", children: [
-      /* @__PURE__ */ jsx("h3", { className: "font-headline-md text-headline-md uppercase", children: f.id ? "Edit Crew Member" : "Add Crew Member" }),
-      /* @__PURE__ */ jsxs("div", { children: [
-        /* @__PURE__ */ jsx("label", { className: label, children: "Name" }),
-        /* @__PURE__ */ jsx("input", { className: input, value: f.name, onChange: (e) => setF({ ...f, name: e.target.value }) })
-      ] }),
-      /* @__PURE__ */ jsxs("div", { children: [
-        /* @__PURE__ */ jsx("label", { className: label, children: "Hourly Rate ($)" }),
-        /* @__PURE__ */ jsx("input", { className: input, inputMode: "decimal", value: f.rate, onChange: (e) => setF({ ...f, rate: e.target.value }), placeholder: "25" })
-      ] }),
-      /* @__PURE__ */ jsxs("div", { children: [
-        /* @__PURE__ */ jsx("label", { className: label, children: "4-Digit PIN" }),
-        /* @__PURE__ */ jsx("input", { className: `${input} tracking-[0.4em]`, inputMode: "numeric", maxLength: 4, value: f.pin, onChange: (e) => setF({ ...f, pin: e.target.value.replace(/\D/g, "") }), placeholder: "0000" })
-      ] }),
-      err && /* @__PURE__ */ jsx("p", { className: "text-error text-sm font-label-bold", children: err }),
-      /* @__PURE__ */ jsxs("div", { className: "flex gap-3", children: [
-        /* @__PURE__ */ jsx("button", { className: btn, children: f.id ? "Save Changes" : "Add Member" }),
-        f.id && /* @__PURE__ */ jsx("button", { type: "button", className: btnGhost, onClick: () => setF(blank), children: "Cancel" })
-      ] })
+    /* @__PURE__ */ jsxs("form", { onSubmit: add, className: "bg-surface-container-lowest p-6 border-2 border-surface-container-highest space-y-5 h-fit", children: [
+      /* @__PURE__ */ jsx("h3", { className: "font-headline-md text-headline-md uppercase", children: "Add Crew Member" }),
+      /* @__PURE__ */ jsx(CrewFields, { f, setF, idPrefix: "crew-add" }),
+      err && /* @__PURE__ */ jsx("p", { role: "alert", className: "text-error text-sm font-label-bold", children: err }),
+      /* @__PURE__ */ jsx("button", { className: btn, children: "Add Member" })
     ] }),
     /* @__PURE__ */ jsxs("div", { className: "space-y-3", children: [
       employees.length === 0 && /* @__PURE__ */ jsx("p", { className: "text-on-surface-variant", children: "No crew yet. Add your first person." }),
       employees.map((e) => {
         const link = `${typeof window !== "undefined" ? window.location.origin : ""}/employee?u=${e.id}`;
+        if (editId === e.id) {
+          return /* @__PURE__ */ jsxs("form", { onSubmit: saveEdit, className: "bg-surface-container-lowest p-4 border-2 border-primary space-y-4", children: [
+            /* @__PURE__ */ jsxs("h3", { className: "font-headline-md text-headline-md uppercase", children: [
+              "Edit ",
+              e.name
+            ] }),
+            /* @__PURE__ */ jsx(CrewFields, { f: ef, setF: setEf, idPrefix: `crew-edit-${e.id}`, autoFocus: true }),
+            editErr && /* @__PURE__ */ jsx("p", { role: "alert", className: "text-error text-sm font-label-bold", children: editErr }),
+            /* @__PURE__ */ jsxs("div", { className: "flex gap-3", children: [
+              /* @__PURE__ */ jsx("button", { className: btn, disabled: busy, children: busy ? "Saving…" : "Save Changes" }),
+              /* @__PURE__ */ jsx("button", { type: "button", className: btnGhost, disabled: busy, onClick: () => setEditId(""), children: "Cancel" })
+            ] }),
+            /* @__PURE__ */ jsx("p", { className: "text-on-surface-variant/70 text-xs", children: "A new rate applies to shifts logged from now on. Shifts already on the books keep the rate they were logged at. Their login link stays the same." })
+          ] }, e.id);
+        }
         return /* @__PURE__ */ jsxs("div", { className: "bg-surface-container-lowest p-4 border-2 border-surface-container-highest space-y-3", children: [
           /* @__PURE__ */ jsxs("div", { className: "flex items-start justify-between gap-3", children: [
             /* @__PURE__ */ jsxs("div", { children: [
@@ -3343,10 +3398,11 @@ function CrewTab({ employees, post: post2, onChange }) {
                 e.rate,
                 "/hr · PIN ",
                 e.pin
-              ] })
+              ] }),
+              savedId === e.id && /* @__PURE__ */ jsx("div", { role: "status", className: "text-primary text-xs font-label-bold uppercase tracking-widest mt-1", children: "Changes saved" })
             ] }),
             /* @__PURE__ */ jsxs("div", { className: "flex gap-2 shrink-0", children: [
-              /* @__PURE__ */ jsx("button", { className: btnGhost, onClick: () => setF({ id: e.id, name: e.name, rate: String(e.rate), pin: e.pin }), children: "Edit" }),
+              /* @__PURE__ */ jsx("button", { className: btnGhost, onClick: () => startEdit(e), children: "Edit" }),
               /* @__PURE__ */ jsx("button", { className: "text-on-surface-variant hover:text-error text-xs underline", onClick: () => del(e.id), children: "Remove" })
             ] })
           ] }),
@@ -3357,7 +3413,7 @@ function CrewTab({ employees, post: post2, onChange }) {
           /* @__PURE__ */ jsxs("p", { className: "text-on-surface-variant/70 text-xs", children: [
             "Text this link to ",
             e.name.split(" ")[0],
-            " — it opens straight to their name; they just enter PIN ",
+            ". It opens straight to their name, and they just enter PIN ",
             e.pin,
             "."
           ] })
@@ -3381,7 +3437,12 @@ function JobsTab({ jobs, entries, post: post2, onChange }) {
       setErr(e2.message);
     }
   };
-  const editJob = (j) => setF({ id: j.id, customer: j.customer || (j.workType ? "" : j.name || ""), workType: j.workType || "", address: j.address || "", status: j.status || "active" });
+  const formRef = useRef(null);
+  const editJob = (j) => {
+    setF({ id: j.id, customer: j.customer || (j.workType ? "" : j.name || ""), workType: j.workType || "", address: j.address || "", status: j.status || "active" });
+    formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    formRef.current?.querySelector("input")?.focus({ preventScroll: true });
+  };
   const setStatus = async (j, status) => {
     await post2({ action: "save-job", job: { id: j.id, status } });
     onChange();
@@ -3405,7 +3466,7 @@ function JobsTab({ jobs, entries, post: post2, onChange }) {
     return m;
   }, [entries]);
   return /* @__PURE__ */ jsxs("div", { className: "grid md:grid-cols-2 gap-8", children: [
-    /* @__PURE__ */ jsxs("form", { onSubmit: save, className: "bg-surface-container-lowest p-6 border-2 border-surface-container-highest space-y-5 h-fit", children: [
+    /* @__PURE__ */ jsxs("form", { ref: formRef, onSubmit: save, className: "bg-surface-container-lowest p-6 border-2 border-surface-container-highest space-y-5 h-fit scroll-mt-32", children: [
       /* @__PURE__ */ jsx("h3", { className: "font-headline-md text-headline-md uppercase", children: f.id ? "Edit Job" : "Add a Job" }),
       /* @__PURE__ */ jsxs("p", { className: "text-on-surface-variant text-sm", children: [
         "Only ",
