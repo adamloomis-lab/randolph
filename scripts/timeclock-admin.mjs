@@ -3,6 +3,7 @@
 //   node scripts/timeclock-admin.mjs check      read-only report on keys and storage behavior
 //   node scripts/timeclock-admin.mjs migrate    dry run of the key and job-id migration
 //   node scripts/timeclock-admin.mjs migrate --apply
+//   node scripts/timeclock-admin.mjs nightly    run the nightly backup and month packing right now
 // Uses the Netlify CLI login already on this machine. Prints counts only, never PINs or rates.
 import { getStore } from '@netlify/blobs'
 import { readFileSync, writeFileSync, mkdirSync, chmodSync } from 'node:fs'
@@ -97,6 +98,16 @@ if (cmd === 'backup') {
     console.log(JSON.stringify({ after: a, totalsUnchanged: same, legacyIdsLeft: after.blobs.filter((b) => !DATED.test(b.key.slice(6))).length, withJobId: afterRows.filter((e) => e?.jobId).length }))
     if (!same) process.exit(2)
   }
+} else if (cmd === 'nightly') {
+  // Same code the 3:00 AM job runs, pointed at the live store from this machine.
+  process.env.NETLIFY_BLOBS_CONTEXT = Buffer.from(JSON.stringify({ siteID, token })).toString('base64')
+  const core = await import('../netlify/functions/_lib/core.mjs')
+  const live = core.store()
+  const snap = await core.takeSnapshot(live, 'daily')
+  const kept = await core.pruneSnapshots()
+  const packed = await core.buildArchives(live)
+  const t0 = Date.now(); const rows = await core.listEntries(live); const ms = Date.now() - t0
+  console.log(JSON.stringify({ backup: snap.key, ...snap.counts, snapshotsKept: kept.kept, monthsPacked: packed, loadAllShifts: { shifts: rows.length, hours: r2(rows.reduce((t, e) => t + e.hours, 0)), pay: r2(rows.reduce((t, e) => t + e.pay, 0)), seconds: r2(ms / 1000) } }))
 } else {
-  console.log('usage: node scripts/timeclock-admin.mjs backup | check | migrate [--apply]')
+  console.log('usage: node scripts/timeclock-admin.mjs backup | check | migrate [--apply] | nightly')
 }
